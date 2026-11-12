@@ -12,7 +12,8 @@ import {
   resolveEngine,
 } from "./detect";
 import { resolveCliPath } from "./cli";
-import { ChatEvent, EngineVersion, PromptImage } from "./types";
+import { isRuleKind } from "./approvalRules";
+import { ApprovalAnswer, ChatEvent, EngineVersion, PromptImage } from "./types";
 
 type Transport =
   | { mode: "persistent"; client: AcpClient }
@@ -114,7 +115,12 @@ export class ChatSession {
         await this.handlePrompt(String(msg.text ?? ""), sanitizeImages(msg.images));
         break;
       case "approve":
-        this.handleApproval(String(msg.optionId ?? ""), String(msg.toolCallId ?? ""));
+        this.handleApproval(String(msg.toolCallId ?? ""), {
+          optionId: String(msg.optionId ?? ""),
+          ...(isRuleKind(msg.rule) ? { rule: msg.rule } : {}),
+          ...(typeof msg.folder === "string" ? { folder: msg.folder } : {}),
+          ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
+        });
         break;
       case "newSession":
         await this.newSession();
@@ -230,11 +236,8 @@ export class ChatSession {
     }
   }
 
-  private handleApproval(optionId: string, toolCallId: string): void {
-    if (this.transport?.mode !== "persistent") {
-      return;
-    }
-    // Once answered, don't resurrect this card when restoring a webview.
+  /** Once answered, don't resurrect an approval card when restoring a webview. */
+  private dropApprovalCard(toolCallId: string): void {
     this.transcript = this.transcript.filter((msg) => {
       const m = msg as { type?: string; event?: { kind?: string; request?: { toolCallId?: string } } };
       return !(
@@ -243,6 +246,13 @@ export class ChatSession {
         (m.event.request?.toolCallId ?? "") === toolCallId
       );
     });
+  }
+
+  private handleApproval(toolCallId: string, answer: ApprovalAnswer): void {
+    if (this.transport?.mode !== "persistent") {
+      return;
+    }
+    this.dropApprovalCard(toolCallId);
     // Answer the specific pending request for this tool call. Fall back to the
     // only pending request if the UI didn't supply a toolCallId.
     let requestId = this.pendingApprovals.get(toolCallId);
@@ -252,7 +262,13 @@ export class ChatSession {
     if (requestId === undefined) {
       return;
     }
-    this.transport.client.respondToApproval(requestId, optionId);
+    try {
+      this.transport.client.respondToApproval(requestId, answer);
+    } catch (err) {
+      // A folder rule with an invalid folder (the webview checks it first).
+      this.post({ type: "error", message: errorMessage(err) });
+      return;
+    }
     this.pendingApprovals.delete(toolCallId);
   }
 
@@ -746,6 +762,12 @@ export class ChatSession {
           this.lastCommands = msg;
         } else if (kind === "contextUsage") {
           this.lastContext = msg;
+        } else if (kind === "approvalResolved") {
+          // Answered by a rule: no card to restore, and nothing pending.
+          const id = (m.event as { toolCallId?: string }).toolCallId ?? "";
+          this.dropApprovalCard(id);
+          this.pendingApprovals.delete(id);
+          this.transcript.push(msg);
         } else {
           this.transcript.push(msg);
         }

@@ -70,7 +70,14 @@ Then run **Developer: Reload Window**.
 - [ ] Dragging a non-image file from the Explorer inserts its path.
 
 ### Approvals
-- [ ] With `autopilot` off, a file write shows a card with Allow / Always allow / Deny / Always deny.
+- [ ] With `autopilot` off, a file write shows a card with Allow / Create allow rule… / Deny / Deny with reason… / Create deny rule….
+- [ ] Create allow rule on a file read outside the workspace lists `Trust "<file>"` and `Trust entire tool (Read File)`. Entire tool → reading a second file doesn't ask.
+- [ ] A shell command lists `Trust "<command>"`, `Trust "cat *"` and `Trust entire tool (Run Command)`. After "cat \*", another `cat` doesn't ask but `ls` does.
+- [ ] On `find …; ls`, entire tool for command 1 means `ls` isn't asked.
+- [ ] A write to `src/a/x.txt` offers "Allow a folder for this session…" prefilled with `src/a`. Change it to `src` → a write to `src/y.txt` only shows Review changes; `lib/z.txt` asks. `..`, `~`, `*` or a folder not containing the file show an error.
+- [ ] Deny with reason: type "use rg instead" → the agent's reply reflects it.
+- [ ] Back returns from the rule list and the text fields; Esc in a text field does too.
+- [ ] `cat a; echo b` asks twice, each card naming its command ("Command 1: …", "Command 2: …").
 - [ ] Allow applies the change; Deny skips it.
 - [ ] With `autopilot` on, tools run without asking.
 
@@ -88,7 +95,8 @@ Then run **Developer: Reload Window**.
 - [ ] `/` shows the menu; ↑/↓, Tab, Enter and Esc work; it fits narrow terminals.
 - [ ] `/help` lists all commands; unknown `/foo` isn't sent to the model.
 - [ ] Spot-check: `/context show`, `/compact`, `/usage`, `/model`, `/rewind` (asks first), `/title`, `/spawn`, `/resume`.
-- [ ] Approvals take `y` / `a` / `n`. Esc cancels a reply.
+- [ ] Approvals take `y` / `n` / Tab (reason) / `t` (allow rule) / `d` (deny rule); rules are picked by number, Esc goes back. Compound lines name the command. Esc cancels a reply.
+- [ ] The folder rule's input is prefilled and editable (Backspace, Ctrl+U); an invalid folder prints the reason and asks again.
 
 ### Startup errors
 - [ ] With an invalid `kiroCliPath`, the chat shows a clear error.

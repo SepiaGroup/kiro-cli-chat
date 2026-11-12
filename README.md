@@ -47,7 +47,13 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
   Copy button). Tool calls show as cards with the files touched, `+`/`-` diffs
   and how long they took.
 - **Approvals.** In Supervised mode (Autopilot off) file changes and commands
-  wait for Allow / Always allow / Deny / Always deny.
+  wait for your answer, with the same choices as kiro-cli: **Allow**,
+  **Create allow rule…**, **Deny**, **Deny with reason…** (the agent is told
+  why) and **Create deny rule…**. A rule covers this exact file or
+  command, the command pattern (`find *`), a folder and everything under it
+  (file changes; you can edit the folder), or the entire tool (every
+  command, every file read, …). Rules last for the session. A line like
+  `a; b && c` is asked one command at a time, and the card says which.
 - **Images.** Paste a screenshot (`Cmd+V`), Shift-drag image files onto the
   chat, or use **Kiro CLI Chat: Attach Image or File**. Dropping other files
   inserts their paths.
@@ -67,7 +73,10 @@ the Terminal panel's **+** dropdown. Each terminal has its own engine and
 conversation, so you can open several.
 
 It streams markdown (colors, lists, code blocks), shows tool cards with diffs
-and asks `y`/`a`/`n` for approvals. The prompt shows the context used (`17% >`,
+and asks for approvals with kiro-cli's keys: `y` allow, `t` create an allow
+rule, `n` deny, Tab deny with a reason, `d` create a deny rule. The rule keys
+list the rules to pick by number (exact, pattern, folder, entire tool); Esc
+goes back. The prompt shows the context used (`17% >`,
 or `17% !>` with Autopilot), and each reply ends with
 `▸ Credits: … • Time: …`.
 

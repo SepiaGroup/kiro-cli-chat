@@ -173,6 +173,11 @@ html, body {
   gap: 8px;
 }
 
+.approval-part {
+  font-size: 0.9em;
+  opacity: 0.85;
+}
+
 .approval-row {
   display: flex;
   gap: 6px;
@@ -946,3 +951,66 @@ html, body {
   display: block;
 }
 
+
+.approval-flag {
+  font-size: 0.9em;
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.approval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.approval-sub {
+  font-weight: 600;
+}
+
+.approval-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approval-rules .approval-btn {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+}
+
+.approval-detail {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
+.approval-btn.plain {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.approval-btn:focus-visible,
+.approval-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.approval-input {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.approval-hint {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.approval-hint.error {
+  color: var(--vscode-errorForeground);
+  opacity: 1;
+}

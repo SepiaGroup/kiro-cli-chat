@@ -2,6 +2,7 @@
 // Pure functions; unit-testable. Handles both the lean v2 stream-json shape
 // and the richer v3 shape (session_info_update with _meta.kiro.kind).
 
+import { buildRules, toolName } from "./approvalRules";
 import {
   ApprovalRequest,
   AvailableCommand,
@@ -200,6 +201,73 @@ function mapSessionInfo(update: Record<string, unknown>): ChatEvent[] {
     out.push({ kind: "approvalRequest", request: extractApproval(kiro) });
   }
   return out;
+}
+
+/**
+ * Map the params of a `session/request_permission` server request.
+ *
+ * The engine offers one "Always allow" / "Always deny"; on its own that saves
+ * a rule for the exact file or command. Like the kiro-cli TUI, those options
+ * open a list of rules to create instead (exact, command pattern, folder,
+ * entire tool; see approvalRules.ts), and AcpClient sends the chosen one in
+ * the response's `_meta.kiro.consent`.
+ */
+export function mapPermissionRequest(params: unknown): ApprovalRequest {
+  const p = (params ?? {}) as Record<string, unknown>;
+  const toolCall = (p.toolCall ?? {}) as Record<string, unknown>;
+  const options = Array.isArray(p.options) ? p.options : [];
+  const question = String(p.question ?? toolCall.title ?? "Approve tool?");
+  const kiro = ((p._meta as Record<string, unknown> | undefined)?.kiro ?? {}) as Record<string, unknown>;
+  const consent = (kiro.consent ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+  const capability = str(consent.capability);
+  const part = str(consent.triggeringResource);
+  const resource = part || str(consent.resource);
+  const workspaceRoot = str(consent.workspaceRoot);
+
+  const req: ApprovalRequest = {
+    toolCallId: String(toolCall.toolCallId ?? p.toolCallId ?? ""),
+    question,
+    options: options.map((o) => {
+      const r = (o ?? {}) as Record<string, unknown>;
+      return { optionId: String(r.optionId ?? ""), name: String(r.name ?? ""), kind: String(r.kind ?? "") };
+    }),
+  };
+  if (part && part !== question.trim()) {
+    req.part = part;
+    if (typeof kiro.consentRound === "number") {
+      req.round = kiro.consentRound;
+    }
+  }
+  if (str(p.sessionId)) {
+    req.sessionId = str(p.sessionId);
+  }
+  const classifier = kiro.trustClassifier as Record<string, unknown> | undefined;
+  if (classifier?.decision === "prompt" && str(classifier.reason)) {
+    req.flag = str(classifier.reason);
+  }
+  if (!capability) {
+    return req;
+  }
+  req.capability = capability;
+  if (resource) {
+    req.resource = resource;
+  }
+  if (workspaceRoot) {
+    req.workspaceRoot = workspaceRoot;
+  }
+  req.tool = toolName(capability, str(toolCall.name) || str(kiro.toolName) || str(kiro.toolId));
+  const info = { capability, resource: resource || undefined, askType: str(consent.askType), workspaceRoot };
+  for (const opt of req.options) {
+    if (opt.kind === "allow_always") {
+      req.allowRules = buildRules("allow", info, req.tool);
+      opt.name = "Create allow rule…";
+    } else if (opt.kind === "reject_always") {
+      req.denyRules = buildRules("deny", info, req.tool);
+      opt.name = "Create deny rule…";
+    }
+  }
+  return req;
 }
 
 function extractApproval(kiro: Record<string, unknown>): ApprovalRequest {

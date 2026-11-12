@@ -1,5 +1,8 @@
 // Shared types for the Kiro CLI Chat extension.
 
+import type { ApprovalRule, RuleKind } from "./approvalRules";
+export type { ApprovalRule, RuleKind } from "./approvalRules";
+
 export type EngineVersion = "v1" | "v2" | "v3";
 export type EngineSetting = "auto" | EngineVersion;
 export type InteractionMode = "persistent" | "one-shot";
@@ -51,7 +54,10 @@ export type ChatEvent =
   | { kind: "thinking" }
   | { kind: "toolCall"; toolCallId: string; title: string; toolKind?: string; paths?: string[]; startLine?: number; diff?: ToolDiff }
   | { kind: "toolUpdate"; toolCallId: string; status: string; output?: string; diff?: ToolDiff; startLine?: number }
-  | { kind: "approvalRequest"; request: ApprovalRequest }
+  /** `requestId` is the engine's JSON-RPC id, for answering (ACP only). */
+  | { kind: "approvalRequest"; request: ApprovalRequest; requestId?: number }
+  /** A waiting approval was answered by a rule just created (no card needed). */
+  | { kind: "approvalResolved"; toolCallId: string; requestId: number; allowed: boolean; label: string }
   | { kind: "contextUsage"; usagePercentage: number; usedTokens?: number; threshold?: number }
   | { kind: "metering"; credits: number }
   /** The engine's id for the user message just sent (used by /rewind). */
@@ -86,7 +92,43 @@ export interface ApprovalOption {
 export interface ApprovalRequest {
   toolCallId: string;
   question: string;
+  /**
+   * The engine's options. When `allowRules` / `denyRules` are set, the
+   * allow_always / reject_always option opens that rule list instead of
+   * answering directly (like the kiro-cli TUI's "Create allow rule…").
+   */
   options: ApprovalOption[];
+  /**
+   * The engine asks once per command in a compound shell line
+   * (`a; b && c | d`). This is the command being asked about, when it
+   * differs from `question` (the whole line).
+   */
+  part?: string;
+  /** 1-based position of `part` within the line (`consentRound`). */
+  round?: number;
+  /** Engine consent capability (`fs_read`, `shell`, …). */
+  capability?: string;
+  /** The file or command being asked about. */
+  resource?: string;
+  workspaceRoot?: string;
+  sessionId?: string;
+  /** Tool display name, e.g. "Run Command". */
+  tool?: string;
+  allowRules?: ApprovalRule[];
+  denyRules?: ApprovalRule[];
+  /** Why the engine's trust classifier wants a person to look at this. */
+  flag?: string;
+}
+
+/** How the user answered an approval. */
+export interface ApprovalAnswer {
+  optionId: string;
+  /** For allow_always / reject_always: which rule to create. */
+  rule?: RuleKind;
+  /** For folder rules: the folder typed (checked again before sending). */
+  folder?: string;
+  /** For reject_once: why, sent to the agent. */
+  reason?: string;
 }
 
 export interface ConfigOption {
