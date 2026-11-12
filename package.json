@@ -1,0 +1,226 @@
+{
+  "name": "kiro-cli-chat",
+  "displayName": "Kiro CLI Chat",
+  "description": "Chat with the Kiro CLI v3 agent engine in VS Code editor tabs, the panel, or the terminal — works on Macs without AVX/AVX2 by driving the headless ACP engine instead of the AVX-only TUI.",
+  "version": "0.1.0",
+  "publisher": "SepiaGroup",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SepiaGroup/kiro-cli-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SepiaGroup/kiro-cli-chat/issues"
+  },
+  "homepage": "https://github.com/SepiaGroup/kiro-cli-chat#readme",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "kiro",
+    "kiro-cli",
+    "chat",
+    "agent",
+    "acp",
+    "avx"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onWebviewPanel:kiroCliChat.editor",
+    "onTerminalProfile:kiroCliChat.terminal"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiroCliChat.open",
+        "title": "Kiro CLI Chat: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "kiroCliChat.newSession",
+        "title": "Kiro CLI Chat: New Session"
+      },
+      {
+        "command": "kiroCliChat.resumeSession",
+        "title": "Kiro CLI Chat: Resume Previous Session"
+      },
+      {
+        "command": "kiroCliChat.restart",
+        "title": "Kiro CLI Chat: Restart Engine"
+      },
+      {
+        "command": "kiroCliChat.login",
+        "title": "Kiro CLI Chat: Log In"
+      },
+      {
+        "command": "kiroCliChat.attach",
+        "title": "Kiro CLI Chat: Attach Image or File",
+        "icon": "$(attach)"
+      },
+      {
+        "command": "kiroCliChat.openInEditor",
+        "title": "Kiro CLI Chat: Open Chat in Editor Tab",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "kiroCliChat.newChatTab",
+        "title": "Kiro CLI Chat: New Chat Tab",
+        "icon": "$(add)"
+      },
+      {
+        "command": "kiroCliChat.openInPanel",
+        "title": "Kiro CLI Chat: Open Chat in Panel",
+        "icon": "$(layout-panel)"
+      },
+      {
+        "command": "kiroCliChat.newTerminalChat",
+        "title": "Kiro CLI Chat: New Terminal Chat (text mode)",
+        "icon": "$(terminal)"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "kiroCliChatPanel",
+          "title": "Kiro CLI Chat",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "kiroCliChatPanel": [
+        {
+          "id": "kiroCliChat.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "kiroCliChat.open",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k"
+      },
+      {
+        "key": "shift+enter",
+        "command": "workbench.action.terminal.sendSequence",
+        "args": {
+          "text": "\u001b\r"
+        },
+        "when": "terminalFocus && kiroCliChat.terminalChatFocused"
+      }
+    ],
+    "configuration": {
+      "title": "Kiro CLI Chat",
+      "properties": {
+        "kiroCliChat.openIn": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "Open the chat as an editor tab (supports VS Code's native file-drop overlay: hold Shift to drop images/files).",
+            "Open the chat in the panel/side bar view (wherever you've moved it)."
+          ],
+          "default": "editor",
+          "markdownDescription": "Where **Open Chat** (`Cmd/Ctrl+Shift+K`, status bar) opens the chat. Each chat tab and the panel view is its own conversation."
+        },
+        "kiroCliChat.kiroCliPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the `kiro-cli` binary. Leave empty to auto-detect (`kiro-cli` on PATH, then `~/.local/bin/kiro-cli`)."
+        },
+        "kiroCliChat.defaultEngine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "default": "auto",
+          "markdownDescription": "Agent engine to use. `auto` selects the newest engine that runs without AVX (detected at runtime). Pin a specific `vN` to override."
+        },
+        "kiroCliChat.defaultModel": {
+          "type": "string",
+          "default": "auto",
+          "markdownDescription": "Model for new sessions. `auto` lets Kiro choose per task. Valid values are listed by `kiro-cli chat --list-models`; you can also switch models live from the chat's model dropdown or `/model`."
+        },
+        "kiroCliChat.interactionMode": {
+          "type": "string",
+          "enum": [
+            "persistent",
+            "one-shot"
+          ],
+          "default": "persistent",
+          "markdownDescription": "`persistent` uses the long-lived `kiro-cli acp` process (enables tool approvals and multi-turn in one process). `one-shot` spawns a process per turn with `--resume-id` (no live approvals)."
+        },
+        "kiroCliChat.autopilot": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When off (default), run in **Supervised** mode: the agent asks for approval before file changes. When on, tools run without confirmation."
+        },
+        "kiroCliChat.enterToSend": {
+          "type": "boolean",
+          "default": true,
+          "description": "Press Enter to send a message; Shift+Enter inserts a newline. If off, the behavior is reversed."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "kiroCliChat.newChatTab",
+          "when": "view == kiroCliChat.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "kiroCliChat.openInEditor",
+          "when": "view == kiroCliChat.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "kiroCliChat.newTerminalChat",
+          "when": "view == kiroCliChat.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "terminal": {
+      "profiles": [
+        {
+          "id": "kiroCliChat.terminal",
+          "title": "Kiro Chat",
+          "icon": "comment-discussion"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "compile": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "npm run test:build && node --test --test-reporter=spec \"dist-test/**/*.test.js\"",
+    "test:build": "tsc -p tsconfig.test.json",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.98.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "8.72.2"
+  }
+}
