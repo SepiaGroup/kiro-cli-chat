@@ -37,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const remote = new RemoteController(context, output, provider);
   context.subscriptions.push(
     remote,
+    provider.setRemoteAccess(remote, remote.onDidChange),
     vscode.commands.registerCommand("kiroCliChat.startRemoteAccess", () => remote.start(true)),
     vscode.commands.registerCommand("kiroCliChat.stopRemoteAccess", () => remote.stop()),
     vscode.commands.registerCommand("kiroCliChat.showRemoteLink", () => remote.showLink()),

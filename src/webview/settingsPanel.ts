@@ -26,6 +26,15 @@ const effortSel = byId("sel-effort") as HTMLSelectElement;
 const memorySel = byId("sel-memory") as HTMLSelectElement;
 const contentSel = byId("sel-content") as HTMLSelectElement;
 
+const remoteChk = byId("chk-remote") as HTMLInputElement;
+const remoteLinkRow = byId("remote-link-row");
+
+/** Whether remote access is on, as the checkbox and the link button show it. */
+export function setRemoteState(running: boolean): void {
+  remoteChk.checked = running;
+  remoteLinkRow.classList.toggle("hidden", !running);
+}
+
 export function hideSettingsPanel(): void {
   settingsEl.classList.add("hidden");
 }
@@ -71,6 +80,13 @@ export function initSettingsPanel(): void {
 
   contentSel.addEventListener("change", () => {
     vscode.postMessage({ type: "setConfig", id: "contentCollection", value: contentSel.value });
+  });
+
+  remoteChk.addEventListener("change", () => {
+    vscode.postMessage({ type: "remoteAccess", on: remoteChk.checked });
+  });
+  byId("btn-remote-link").addEventListener("click", () => {
+    vscode.postMessage({ type: "remoteLink" });
   });
 
   autopilotChk.addEventListener("change", () => {

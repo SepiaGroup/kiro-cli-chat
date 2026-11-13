@@ -40,6 +40,16 @@ export interface ChatSessionHooks {
   newTab(): void;
   /** Something remote access lists changed (a reply started or ended). */
   changed?(chat: ChatSession): void;
+  /** The remote access switch, for the Settings panel (set once the extension has made it). */
+  remoteAccess?(): RemoteAccessControl | undefined;
+}
+
+/** What the Settings panel needs from remote access (the desktop page only; remote devices cannot reach it). */
+export interface RemoteAccessControl {
+  readonly running: boolean;
+  start(showLink: boolean): Promise<void>;
+  stop(): Promise<void>;
+  showLink(): Promise<void>;
 }
 
 /** Where a message from a screen came from. Remote ones are checked before they get here; `device` is its name. */
@@ -125,6 +135,14 @@ export class ChatSession implements RemoteChat {
     return this.label;
   }
 
+  /** Tell the desktop page whether remote access is on (its Settings checkbox). Not recorded: remote pages never see it. */
+  pushRemoteState(): void {
+    const control = this.hooks.remoteAccess?.();
+    if (control) {
+      this.targets.postToDesktop({ type: "remoteState", running: control.running });
+    }
+  }
+
   // --- RemoteChat: what remote access needs from a chat ---
 
   /** A reply is running (shown in the chat list on a remote device). */
@@ -165,8 +183,30 @@ export class ChatSession implements RemoteChat {
     origin: MessageOrigin
   ): Promise<void> {
     switch (msg.type) {
+      case "remoteAccess":
+      case "remoteLink": {
+        const control = this.hooks.remoteAccess?.();
+        if (origin.kind !== "desktop" || !control) {
+          return;
+        }
+        try {
+          if (msg.type === "remoteLink") {
+            await control.showLink();
+          } else if (msg.on === true) {
+            await control.start(true);
+          } else {
+            await control.stop();
+          }
+        } finally {
+          this.pushRemoteState(); // also puts the checkbox back if starting failed
+        }
+        return;
+      }
       case "ready":
         this.targets.markReady(source);
+        if (origin.kind === "desktop") {
+          this.pushRemoteState();
+        }
         if (this.pendingUiMessage && this.targets.kindOf(source) === "desktop") {
           deliver(source, this.pendingUiMessage);
           this.pendingUiMessage = undefined;

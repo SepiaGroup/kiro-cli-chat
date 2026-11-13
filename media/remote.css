@@ -16,6 +16,11 @@
   font-family: var(--vscode-font-family, system-ui, sans-serif);
 }
 
+/* Remote access is switched on and off from the desktop only. */
+.remote-page .settings-remote {
+  display: none !important;
+}
+
 .remote-gate.hidden,
 .remote-bar.hidden {
   display: none;

@@ -141,8 +141,8 @@ This version serves the chat on this Mac only (`http://127.0.0.1`), so you can
 try it in a browser on the same machine; reaching it from a phone over
 Tailscale comes in a later version.
 
-1. Run **Kiro CLI Chat: Start Remote Access**. A **Remote** item appears in the
-   status bar.
+1. Tick **Remote access** in ⚙ Settings, or run **Kiro CLI Chat: Start Remote
+   Access**. A **Remote** item appears in the status bar.
 2. Choose **Copy Link** or **Open in Browser**. The pairing link works once, for
    10 minutes, and the page removes the secret from the address bar.
 3. Pick a chat. You see the conversation as it is here, and can send prompts,

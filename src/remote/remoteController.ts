@@ -22,6 +22,9 @@ export class RemoteController implements vscode.Disposable {
   private readonly status: vscode.StatusBarItem;
   private chatSub?: vscode.Disposable;
   private starting?: Promise<void>;
+  private readonly stateChanged = new vscode.EventEmitter<void>();
+  /** Fires when remote access starts or stops. */
+  readonly onDidChange = this.stateChanged.event;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -97,6 +100,7 @@ export class RemoteController implements vscode.Disposable {
     this.chatSub = this.provider.onDidChangeChats(() => server.chatsChanged());
     this.log(`listening on 127.0.0.1:${this.port}`);
     this.updateStatus();
+    this.stateChanged.fire();
   }
 
   async stop(): Promise<void> {
@@ -110,6 +114,7 @@ export class RemoteController implements vscode.Disposable {
     this.pairing.revoke();
     await server.stop();
     this.status.hide();
+    this.stateChanged.fire();
     this.log("stopped");
     void vscode.window.showInformationMessage("Remote access is off. Paired devices stay paired for next time.");
   }
@@ -194,6 +199,7 @@ export class RemoteController implements vscode.Disposable {
     void this.server?.stop();
     this.server = undefined;
     this.status.dispose();
+    this.stateChanged.dispose();
   }
 
   // --- helpers ---

@@ -2,7 +2,7 @@
 // view, each its own conversation (ChatSession) with its own engine.
 
 import * as vscode from "vscode";
-import { ChatSession, ChatSessionHooks } from "./chatSession";
+import { ChatSession, ChatSessionHooks, RemoteAccessControl } from "./chatSession";
 
 /** Webview state saved per chat so a reload can reopen its session. */
 interface ChatState {
@@ -27,7 +27,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     },
     newTab: () => this.newTab(),
     changed: () => this.changed.fire(),
+    remoteAccess: () => this.remoteControl,
   };
+  private remoteControl?: RemoteAccessControl;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -153,6 +155,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   async login(): Promise<void> {
     await this.target()?.login();
+  }
+
+  /** Remote access, for the Settings panel's switch. `changes` fires when it starts or stops. */
+  setRemoteAccess(control: RemoteAccessControl, changes: vscode.Event<void>): vscode.Disposable {
+    this.remoteControl = control;
+    return changes(() => this.chats().forEach((c) => c.pushRemoteState()));
   }
 
   /** Every open chat: the panel view's and each tab's. */

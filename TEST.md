@@ -93,6 +93,7 @@ Then run **Developer: Reload Window**.
 - [ ] Rate limit (only when it happens): a red line with the engine's message; the reply still finishes.
 
 ### Remote access (localhost preview)
+- [ ] Open ⚙ Settings in a chat: the panel has a clear border and shadow, and the Resume panel too. At the bottom, **Remote access** is unchecked. Tick it: remote access starts and the pairing link notice appears; the checkbox stays ticked and **Show pairing link** shows. Untick it: remote access stops. Starting it from the status bar menu or the command ticks the box in every open chat. The browser page's Settings has no Remote access row.
 - [ ] Run **Kiro CLI Chat: Start Remote Access**. The status bar shows **Remote**. Choose **Open in Browser**: the page opens in your browser, the address bar loses the `#k=...` part, and the chat shows the same conversation as the VS Code tab. With two chats open, a picker lists both (and remembers the last one next time).
 - [ ] Send a prompt from the browser: it appears in the VS Code chat too, and the reply streams in both. Stop works from the browser.
 - [ ] Autopilot off, ask for a command that needs approval: the card shows in both screens. Allow it in the browser: the card disappears in VS Code with a line "Allowed from <your browser>". Do it the other way round too ("Allowed on the desktop" in the browser). Deny with a reason works.

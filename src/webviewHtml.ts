@@ -111,6 +111,14 @@ ${manifest}${styles}
     <select id="sel-content"></select>
   </div>
   <div class="settings-note">Whether your content may be used for service improvement.</div>
+  <div class="settings-row settings-remote">
+    <label for="chk-remote">Remote access</label>
+    <input type="checkbox" id="chk-remote" />
+  </div>
+  <div class="settings-note settings-remote">Lets a browser on another device watch and use your chats. It is off when VS Code closes.</div>
+  <div class="settings-row settings-remote hidden" id="remote-link-row">
+    <button id="btn-remote-link" type="button">Show pairing link</button>
+  </div>
 </div>
 <div id="messages"></div>
 <div id="composer">

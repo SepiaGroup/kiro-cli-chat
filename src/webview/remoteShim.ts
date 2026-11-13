@@ -57,6 +57,7 @@ bar.setAttribute("role", "status");
 bar.textContent = "Reconnecting…";
 
 document.body.append(gate, bar);
+document.body.classList.add("remote-page"); // hides what only works on the desktop (see remote.css)
 
 function showGate(kind: GateKind, chats: readonly ChatInfo[] = []): void {
   closeStream();
