@@ -87,6 +87,11 @@ Then run **Developer: Reload Window**.
 - [ ] Allow applies the change; Deny skips it.
 - [ ] With `autopilot` on, tools run without asking.
 
+### Errors
+- [ ] Log out (`kiro-cli logout`), send a prompt in each UI. The error is short ("Not authenticated" or similar) and says to log in again. Log in and retry.
+- [ ] Turn the network off, send a prompt: the message says it is a network error and what to try.
+- [ ] Rate limit (only when it happens): a red line with the engine's message; the reply still finishes.
+
 ### Typing while the agent works
 - [ ] Ask for something slow (for example "run `sleep 20`, then say DONE"). While it runs, type "also end with the word BANANA" and press Enter. A line says it is queued, then that the agent has read it (after the command ends), and the reply includes BANANA.
 - [ ] Terminal: the text you type shows on the status line ("Enter sends: …"). Esc takes back a queued message ("message removed"); another Esc cancels the reply. `/help` mid-reply says commands can't run; dropping an image does too.

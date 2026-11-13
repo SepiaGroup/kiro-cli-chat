@@ -253,7 +253,7 @@ function handleEvent(ev: ChatEventLike): void {
       }
       break;
     case "notice":
-      addSystem(String(ev.text ?? ""), "");
+      addSystem(String(ev.text ?? ""), ev.isError ? "error" : "");
       break;
     case "steer":
       showSteer(String(ev.state ?? ""), Array.isArray(ev.messageIds) ? ev.messageIds.map(String) : []);

@@ -11,6 +11,9 @@ First release.
 - The agent's questions (Spec mode) as a card or numbered choices, with your
   own answer or Skip. `@file:path` in a prompt attaches the file. A prompt the
   engine never answers is cancelled after 10 minutes.
+- A failed prompt shows a short message with a hint (log in again, network,
+  session). The engine's rate-limit warning shows as a red line and the reply
+  carries on.
 - Typing while the agent works sends your message to it (it reads it at its
   next step); in the terminal Esc takes back a message it hasn't read yet.
 - Optional (`kiroCliChat.shareEditorContext`, off by default): tell the agent

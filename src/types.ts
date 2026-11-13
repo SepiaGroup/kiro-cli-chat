@@ -80,7 +80,7 @@ export type ChatEvent =
    */
   | { kind: "steer"; state: "queued" | "injected" | "cleared" | "dropped" | "removed"; messageIds: string[] }
   /** A short line for the user that is not part of the conversation (e.g. which files were attached). */
-  | { kind: "notice"; text: string }
+  | { kind: "notice"; text: string; isError?: boolean }
   | { kind: "error"; message: string };
 
 export interface ToolDiff {

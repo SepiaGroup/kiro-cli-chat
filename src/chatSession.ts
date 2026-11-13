@@ -18,6 +18,7 @@ import { resetPreparedEngine } from "./enginePrep";
 import { isRuleKind } from "./approvalRules";
 import { ApprovalAnswer, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
 import { ChatTranscript } from "./chatTranscript";
+import { describeError } from "./errorAdvice";
 import { errorMessage } from "./format";
 import { pickSessions } from "./sessionList";
 import { webviewHtml } from "./webviewHtml";
@@ -213,7 +214,7 @@ export class ChatSession {
         await this.transport.runner.prompt(text);
       }
     } catch (err) {
-      this.post({ type: "error", message: errorMessage(err) });
+      this.post({ type: "error", message: describeError(errorMessage(err), "Kiro CLI Chat: Log In") });
     }
   }
 

@@ -179,6 +179,11 @@ own messages.
 - **"The Kiro engine didn't answer … within …s"**: the engine hung while
   starting. Use **Restart** (or `/restart` in a terminal chat); the log shows
   the engine's last messages.
+- **A reply fails with "Not authenticated" or "Session expired"**: log in
+  again (the Log In command, or `/login` in the terminal chat), then send the
+  message again. Network and session errors say what to try.
+- **A red "busy" or rate-limit line during a reply**: the engine is short of
+  capacity and retries; the reply carries on.
 - **Engine exited**: the chat says so. Restart starts a new engine; Resume
   reopens the conversation.
 
