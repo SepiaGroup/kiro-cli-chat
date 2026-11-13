@@ -12,6 +12,7 @@ import {
   resolveEngine,
 } from "./detect";
 import * as path from "path";
+import { randomUUID } from "crypto";
 import { resolveCliPath } from "./cli";
 import { imageMimeForPath, sniffImageMime } from "./terminal/imagePaths";
 import { resetPreparedEngine } from "./enginePrep";
@@ -21,6 +22,7 @@ import { ChatTranscript } from "./chatTranscript";
 import { describeError } from "./errorAdvice";
 import { errorMessage } from "./format";
 import { pickSessions } from "./sessionList";
+import { deliver, UiTarget, UiTargets } from "./uiTargets";
 import { webviewHtml } from "./webviewHtml";
 import { cleanAnswer, cleanSteer, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
@@ -36,9 +38,22 @@ export interface ChatSessionHooks {
   newTab(): void;
 }
 
+/** Where a message from a screen came from. Remote ones are checked before they get here. */
+export type MessageOrigin = { kind: "desktop" } | { kind: "remote"; device: string };
+
+/** A remote screen's link to a chat: what it sends goes to `receive`. */
+export interface RemoteConnection {
+  receive(msg: { type: string; [k: string]: unknown }): Promise<void>;
+  dispose(): void;
+}
+
 export class ChatSession {
+  /** Stable for the life of the tab (the engine's session id can change). */
+  readonly id = randomUUID();
+  // The VS Code webview of this tab or view; remote screens are in `targets` too.
   private host?: vscode.Webview;
   private hostSub?: vscode.Disposable;
+  private readonly targets = new UiTargets();
   private transport?: Transport;
   private resolvedEngine?: EngineVersion;
   private cliPath?: string;
@@ -52,9 +67,7 @@ export class ChatSession {
   // What the chat shows, replayed into a re-created webview.
   private readonly transcript = new ChatTranscript();
   private disposed = false;
-  // Whether the current webview's script has loaded (sent "ready").
-  private webviewReady = false;
-  // A request (from a command) to deliver once the webview is ready.
+  // A request (from a command) to deliver once the desktop webview is ready.
   private pendingUiMessage?: unknown;
 
   constructor(
@@ -74,6 +87,9 @@ export class ChatSession {
   /** Show this chat in a webview (replaces any previous one). */
   attach(webview: vscode.Webview): void {
     this.hostSub?.dispose();
+    if (this.host) {
+      this.targets.remove(this.host);
+    }
     webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "media")],
@@ -86,33 +102,58 @@ export class ChatSession {
       cspSource: webview.cspSource,
     });
     this.host = webview;
-    this.webviewReady = false;
+    this.targets.add(webview, "desktop");
     this.hostSub = webview.onDidReceiveMessage((msg) => {
       this.hooks.onActive(this);
-      void this.onMessage(msg, webview);
+      void this.onMessage(msg, webview, { kind: "desktop" });
     });
   }
 
   /** The webview went away (e.g. the panel view is being rebuilt); keep the engine. */
   detach(webview: vscode.Webview): void {
     if (this.host === webview) {
+      this.targets.remove(webview);
       this.hostSub?.dispose();
       this.hostSub = undefined;
       this.host = undefined;
     }
   }
 
+  /** The name shown for this chat (tab title). */
+  get title(): string {
+    return this.label;
+  }
+
+  /**
+   * A remote screen joins this chat. It gets messages after it sends "ready"
+   * (then a snapshot of the chat first). The caller checks what a remote
+   * device may send before passing it to `receive`.
+   */
+  connectRemote(target: UiTarget, device: string): RemoteConnection {
+    this.targets.add(target, "remote");
+    return {
+      receive: (msg) => this.onMessage(msg, target, { kind: "remote", device }),
+      dispose: () => this.targets.remove(target),
+    };
+  }
+
+  /** Remote screens currently showing this chat. */
+  get remoteScreens(): number {
+    return this.targets.remoteCount;
+  }
+
   // --- UI message handling ---
 
   private async onMessage(
     msg: { type: string; [k: string]: unknown },
-    source: vscode.Webview
+    source: UiTarget,
+    _origin: MessageOrigin
   ): Promise<void> {
     switch (msg.type) {
       case "ready":
-        this.webviewReady = true;
-        if (this.pendingUiMessage) {
-          void source.postMessage(this.pendingUiMessage);
+        this.targets.markReady(source);
+        if (this.pendingUiMessage && this.targets.kindOf(source) === "desktop") {
+          deliver(source, this.pendingUiMessage);
           this.pendingUiMessage = undefined;
         }
         // A (re)loaded webview. If the engine is already running (the view was
@@ -540,9 +581,7 @@ export class ChatSession {
 
   /** Send a UI-only request to the webview, waiting for it to load if needed. */
   private postToUi(msg: unknown): void {
-    if (this.host && this.webviewReady) {
-      void this.host.postMessage(msg);
-    } else {
+    if (!this.targets.postToDesktop(msg)) {
       this.pendingUiMessage = msg;
     }
   }
@@ -776,6 +815,7 @@ export class ChatSession {
     this.disposed = true;
     this.hostSub?.dispose();
     this.host = undefined;
+    this.targets.clear();
     this.disposeTransport();
   }
 
@@ -796,15 +836,15 @@ export class ChatSession {
       // Answered by a rule: nothing left to answer.
       this.pendingApprovals.delete((m.event as { toolCallId?: string }).toolCallId ?? "");
     }
-    if (this.host && !this.disposed) {
-      void this.host.postMessage(msg);
+    if (!this.disposed) {
+      this.targets.broadcast(msg);
     }
   }
 
   /** Re-sync a freshly (re)created webview with the already-running engine. */
-  private resyncWebview(target: vscode.Webview): void {
+  private resyncWebview(target: UiTarget): void {
     const send = (msg: unknown): void => {
-      void target.postMessage(msg);
+      deliver(target, msg);
     };
     const msgs = this.transcript.replay();
     msgs.forEach(send);
