@@ -514,3 +514,32 @@ test("cancelling a reply that waits on an approval ends it and forgets the appro
     c.dispose();
   }
 });
+
+test("a remote device can allow or deny once, but not create a rule", async () => {
+  const cli = fakeEngine(
+    "once-only",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        send({ id: "p-1", method: "session/request_permission", params: { sessionId: "s1", toolCall: { toolCallId: "t1", title: "Run find ." }, options: [
+          { optionId: "o-allow", name: "Allow", kind: "allow_once" },
+          { optionId: "o-always", name: "Always", kind: "allow_always" },
+          { optionId: "o-deny", name: "Deny", kind: "reject_once" } ] } });
+      }
+    }`
+  );
+  const { c } = client(cli);
+  const pending = c as unknown as { pendingPermissions: Map<unknown, unknown> };
+  try {
+    await c.start();
+    c.prompt("work").catch(() => undefined); // the fake engine never ends the turn; disposing rejects it
+    await eventually("the approval", () => pending.pendingPermissions.size === 1);
+    assert.throws(() => c.respondToApproval("p-1", { optionId: "o-always" }, { onceOnly: true }), /only allow or deny once/);
+    assert.throws(() => c.respondToApproval("p-1", { optionId: "unknown" }, { onceOnly: true }), /only allow or deny once/);
+    assert.equal(pending.pendingPermissions.size, 1); // still waiting
+    assert.equal(c.respondToApproval("p-1", { optionId: "o-allow" }, { onceOnly: true }), "allow_once");
+    assert.equal(pending.pendingPermissions.size, 0);
+  } finally {
+    c.dispose();
+  }
+});

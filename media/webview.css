@@ -358,7 +358,11 @@ html, body {
 /* Settings panel */
 .settings {
   padding: 10px 12px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  margin: 6px 8px;
+  overflow: hidden;
+  border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
   display: flex;
   flex-direction: column;
@@ -589,7 +593,11 @@ html, body {
 
 /* Resume (previous sessions) panel */
 .resume-panel {
-  border-bottom: 1px solid var(--vscode-panel-border);
+  margin: 6px 8px;
+  overflow: hidden;
+  border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
   max-height: 45%;
   display: flex;
@@ -1050,4 +1058,14 @@ html, body {
   display: flex;
   gap: 6px;
   align-items: baseline;
+}
+
+.settings-remote button {
+  padding: 4px 10px;
+  font: inherit;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  cursor: pointer;
 }

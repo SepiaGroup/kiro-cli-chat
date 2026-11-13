@@ -21,7 +21,7 @@ import {
 } from "./contextCard";
 import { addUserMessage, appendAssistant, finalizeAssistant, resetStreaming } from "./messages";
 import { initResumePanel, isResumeOpen, renderResumeList, renderResumeLoading, SessionRow, toggleResumePanel } from "./resumePanel";
-import { ConfigOptionLike, initSettingsPanel, setAutopilotChecked, updateSettings } from "./settingsPanel";
+import { ConfigOptionLike, initSettingsPanel, setAutopilotChecked, setRemoteState, updateSettings } from "./settingsPanel";
 import { addToolCard, ChatEventLike, updateToolCard } from "./toolCards";
 import { addSystem, autoGrow, byId, div, hidePanels, inputEl, messagesEl, scrollToBottom, state, vscode } from "./ui";
 
@@ -143,6 +143,9 @@ byId("btn-restart").addEventListener("click", () => {
 window.addEventListener("message", (e: MessageEvent) => {
   const msg = e.data as { type: string; [k: string]: unknown };
   switch (msg.type) {
+    case "remoteState":
+      setRemoteState(msg.running === true);
+      break;
     case "status":
       setStatus(String(msg.text ?? ""));
       // While starting up, mirror progress into the indicator label.

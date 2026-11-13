@@ -1,0 +1,9 @@
+{
+  "name": "Kiro CLI Chat",
+  "short_name": "Kiro Chat",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#1e1e1e",
+  "icons": [{ "src": "/static/icon.png", "sizes": "128x128", "type": "image/png" }]
+}

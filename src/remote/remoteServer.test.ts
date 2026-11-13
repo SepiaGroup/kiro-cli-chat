@@ -8,7 +8,7 @@ import { RemoteChat, RemoteServer } from "./remoteServer";
 class FakeChat implements RemoteChat {
   busy = false;
   snapshotMsgs: unknown[] = [{ type: "userMessage", text: "earlier" }];
-  sent: Array<{ msg: RemoteMessage; device: string }> = [];
+  sent: Array<{ msg: RemoteMessage; device: { id: string; name: string } }> = [];
   listeners = new Set<(msg: unknown) => void>();
   failSend = false;
   constructor(
@@ -18,7 +18,7 @@ class FakeChat implements RemoteChat {
   snapshot(): unknown[] {
     return this.snapshotMsgs;
   }
-  async send(msg: RemoteMessage, device: string): Promise<void> {
+  async send(msg: RemoteMessage, device: { id: string; name: string }): Promise<void> {
     if (this.failSend) {
       throw new Error("boom");
     }
@@ -57,7 +57,6 @@ async function boot(extra: { logSize?: number; allowedHosts?: string[] } = {}): 
     pairing,
     permissions: () => perms.current,
     assets: (name) => (name === "webview.js" ? { body: "console.log(1)", type: "text/javascript" } : undefined),
-    secureCookies: true,
     allowedHosts: extra.allowedHosts ? () => extra.allowedHosts as string[] : undefined,
     onPaired: (d) => paired.push(d.name),
     log: (l) => log.push(l),
@@ -116,6 +115,7 @@ interface SseEvent {
 interface Stream {
   status: number;
   events: SseEvent[];
+  snapshots: () => number;
   pings: () => number;
   ended: Promise<void>;
   close(): void;
@@ -126,6 +126,7 @@ function openStream(port: number, path: string, headers: Record<string, string> 
     const req = http.request({ host: "127.0.0.1", port, path, headers: { Host: `127.0.0.1:${port}`, ...headers } }, (res) => {
       let text = "";
       let pings = 0;
+      let snapshots = 0;
       const events: SseEvent[] = [];
       let end!: () => void;
       const ended = new Promise<void>((r) => (end = r));
@@ -149,14 +150,16 @@ function openStream(port: number, path: string, headers: Record<string, string> 
               ev.data += line.slice(6);
             }
           }
-          if (ev.data || ev.event) {
+          if (ev.event === "snapshot") {
+            snapshots++; // the marker before a snapshot; not a message
+          } else if (ev.data || ev.event) {
             events.push(ev);
           }
         }
       });
       res.on("end", end);
       res.on("close", end);
-      resolve({ status: res.statusCode ?? 0, events, pings: () => pings, ended, close: () => req.destroy() });
+      resolve({ status: res.statusCode ?? 0, events, snapshots: () => snapshots, pings: () => pings, ended, close: () => req.destroy() });
     });
     req.on("error", reject);
     req.end();
@@ -212,7 +215,8 @@ test("pairing: right code once, wrong code refused, cookie works, device is name
 
     const secret = rig.pairing.issue();
     const ua = "Mozilla/5.0 (Linux; Android 14) Chrome/120.0 Mobile Safari/537.36";
-    const ok = await request(rig.port, "POST", "/api/pair", { json: { secret }, headers: { "User-Agent": ua } });
+    // Through a proxy (the tailnet name): HTTPS, so the cookie is Secure.
+    const ok = await request(rig.port, "POST", "/api/pair", { json: { secret }, headers: { "User-Agent": ua, Host: "mac.tail1.ts.net" } });
     assert.equal(ok.status, 200);
     assert.equal((json(ok).device as { name: string }).name, "Android, Chrome");
     const setCookie = String(ok.headers["set-cookie"]?.[0]);
@@ -299,7 +303,8 @@ test("chat list, and messages go through the policy to the chat with the device 
     assert.equal(ok.status, 204);
     assert.equal(rig.chats[0].sent.length, 1);
     assert.deepEqual(rig.chats[0].sent[0].msg, { type: "sendPrompt", text: "hello", images: [] });
-    assert.equal(typeof rig.chats[0].sent[0].device, "string");
+    assert.equal(typeof rig.chats[0].sent[0].device.id, "string");
+    assert.equal(rig.chats[0].sent[0].device.name, "iPhone, Safari");
 
     const refused = await request(rig.port, "POST", "/api/chats/c1/message", { headers: h, json: { type: "restart" } });
     assert.equal(refused.status, 403);
@@ -323,8 +328,12 @@ test("bad bodies: not JSON, wrong type, too large", async () => {
     const h = { Cookie: cookie, "Content-Type": "application/json" };
     assert.equal((await request(rig.port, "POST", "/api/chats/c1/message", { headers: h, body: "{nope" })).status, 400);
     assert.equal((await request(rig.port, "POST", "/api/chats/c1/message", { headers: { Cookie: cookie, "Content-Type": "text/plain" }, body: "x" })).status, 415);
-    const huge = await request(rig.port, "POST", "/api/chats/c1/message", { headers: h, body: Buffer.alloc(40 * 1024 * 1024, 97) });
-    assert.equal(huge.status, 413);
+    // The server answers 413 and closes; depending on timing the client sees the answer or the cut connection.
+    const huge = await request(rig.port, "POST", "/api/chats/c1/message", { headers: h, body: Buffer.alloc(40 * 1024 * 1024, 97) }).catch(
+      (e: NodeJS.ErrnoException) => ({ status: 0, code: e.code })
+    );
+    assert.ok(huge.status === 413 || ("code" in huge && ["ECONNRESET", "EPIPE"].includes(String(huge.code))), JSON.stringify(huge));
+    assert.equal(rig.chats[0].sent.length, 0);
     assert.equal((await request(rig.port, "POST", "/api/chats/c1/message", { headers: h, json: { type: "sendPrompt", text: "x".repeat(300_000) } })).status, 413);
   } finally {
     await rig.server.stop();
@@ -355,6 +364,7 @@ test("a new stream gets the snapshot, a sync id, then live messages with ids", a
     const s = await openStream(rig.port, "/api/chats/c1/events", { Cookie: cookie });
     assert.equal(s.status, 200);
     await until("the snapshot", () => s.events.some((e) => e.event === "sync"));
+    assert.equal(s.snapshots(), 1);
     assert.deepEqual(JSON.parse(s.events[0].data), { type: "userMessage", text: "earlier" });
     assert.equal(s.events[1].event, "sync");
     assert.match(s.events[1].id ?? "", /^[0-9a-f]+:0$/);
@@ -390,6 +400,7 @@ test("reconnecting with the last id gets only what was missed", async () => {
     await until("the missed messages", () => again.events.length >= 2);
     assert.deepEqual(again.events.map((e) => JSON.parse(e.data)), [{ n: 3 }, { n: 4 }]);
     assert.equal(again.events.some((e) => e.event === "sync"), false); // no snapshot: a delta
+    assert.equal(again.snapshots(), 0);
     rig.chats[0].emit({ n: 5 });
     await until("live again", () => again.events.length >= 3);
     assert.deepEqual(JSON.parse(again.events[2].data), { n: 5 });
@@ -420,6 +431,7 @@ test("an id from another run, or one the log no longer holds, gets a fresh snaps
 
     const tooOld = await openStream(rig.port, "/api/chats/c1/events", { Cookie: cookie, "Last-Event-ID": firstId });
     await until("snapshot", () => tooOld.events.some((e) => e.event === "sync"));
+    assert.equal(tooOld.snapshots(), 1);
     assert.deepEqual(JSON.parse(tooOld.events[0].data), { type: "userMessage", text: "earlier" });
     assert.match(tooOld.events[1].id ?? "", /:30$/);
     tooOld.close();
@@ -535,4 +547,18 @@ test("stop ends open streams and unsubscribes from chats", async () => {
   await s.ended;
   assert.equal(rig.chats[0].listeners.size, 0);
   await assert.rejects(request(rig.port, "GET", "/"));
+});
+
+test("cookies are Secure behind a proxy (HTTPS) but not for plain loopback", async () => {
+  const rig = await boot();
+  try {
+    const secret = rig.pairing.issue();
+    const direct = await request(rig.port, "POST", "/api/pair", { json: { secret } });
+    assert.doesNotMatch(String(direct.headers["set-cookie"]), /Secure/);
+    const secret2 = rig.pairing.issue();
+    const proxied = await request(rig.port, "POST", "/api/pair", { json: { secret: secret2 }, headers: { Host: "mac.tail1.ts.net" } });
+    assert.match(String(proxied.headers["set-cookie"]), /Secure/);
+  } finally {
+    await rig.server.stop();
+  }
 });

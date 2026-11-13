@@ -134,6 +134,28 @@ first takes back a message the agent hasn't read yet, and the next Esc cancels
 the reply. Commands and images wait until the reply is done. Drag image files onto the terminal (or type their paths), or `/paste`
 a copied image, to attach them.
 
+## Remote access (preview)
+
+Watch and use a chat tab from another browser while it keeps running here.
+This version serves the chat on this Mac only (`http://127.0.0.1`), so you can
+try it in a browser on the same machine; reaching it from a phone over
+Tailscale comes in a later version.
+
+1. Tick **Remote access** in ⚙ Settings, or run **Kiro CLI Chat: Start Remote
+   Access**. A **Remote** item appears in the status bar.
+2. Choose **Copy Link** or **Open in Browser**. The pairing link works once, for
+   10 minutes, and the page removes the secret from the address bar.
+3. Pick a chat. You see the conversation as it is here, and can send prompts,
+   steer, stop a reply, answer questions and **Allow** or **Deny** a command once.
+   Both screens stay in step: answer an approval on one and it goes away on the
+   other, with a line saying who answered.
+
+A paired device stays paired until you remove it (**Remove Remote Device…**).
+Remote access is off by default and when VS Code closes. From a remote device
+you cannot create allow or deny rules, turn Autopilot on, restart the engine,
+log in or open tabs. Terminal chats are not shown. The settings below are
+machine settings, so a workspace cannot turn remote access on.
+
 ## Commands
 
 | Command | What it does |
@@ -147,6 +169,9 @@ a copied image, to attach them.
 | Kiro CLI Chat: Restart Engine | Asks, then restarts the current chat's engine. |
 | Kiro CLI Chat: Log In | Runs `kiro-cli login` in a terminal. |
 | Kiro CLI Chat: Attach Image or File | File picker; images attach, other files insert their path. |
+| Kiro CLI Chat: Start / Stop Remote Access | Starts or stops the remote access server. |
+| Kiro CLI Chat: Show Remote Access Link | A new one-use pairing link to copy or open. |
+| Kiro CLI Chat: Remove Remote Device… | Unpairs one device, or all of them. |
 
 "Current chat" is the chat tab or panel view you used last.
 
@@ -161,6 +186,9 @@ a copied image, to attach them.
 | `kiroCliChat.enterToSend` | `true` | Enter sends, Shift+Enter adds a line. Off reverses them. |
 | `kiroCliChat.defaultEngine` | `auto` | `auto` checks that the engine runs on this machine (once, then remembered) or `v3`. |
 | `kiroCliChat.shareEditorContext` | `false` | Tell the agent which files are open in the editor and which is active (paths only, files inside the chat's folder only). Sent with a prompt when it changed; the chat says so. Ignored in an untrusted workspace. |
+| `kiroCliChat.remote.autoStart` | `false` | Start remote access when VS Code starts. Machine setting. |
+| `kiroCliChat.remote.permissions` | `view`, `prompt`, `approve` | What a paired device may do: `view` chats, `prompt` (send, steer, stop, answer questions), `approve` (allow or deny once). Machine setting. |
+| `kiroCliChat.remote.port` | `0` | Local port for remote access (listens on 127.0.0.1 only); 0 picks a free one. Machine setting. |
 | `kiroCliChat.interactionMode` | `persistent` | `persistent` (ACP) is required for everything above. `one-shot` is a basic fallback with no approvals. |
 
 ## Troubleshooting

@@ -22,6 +22,8 @@ import { ChatTranscript } from "./chatTranscript";
 import { describeError } from "./errorAdvice";
 import { errorMessage } from "./format";
 import { pickSessions } from "./sessionList";
+import type { RemoteChat } from "./remote/remoteServer";
+import type { RemoteMessage } from "./remote/remotePolicy";
 import { deliver, UiTarget, UiTargets } from "./uiTargets";
 import { webviewHtml } from "./webviewHtml";
 import { cleanAnswer, cleanSteer, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
@@ -36,18 +38,27 @@ export interface ChatSessionHooks {
   onActive(chat: ChatSession): void;
   /** The ＋ button: open another chat tab. */
   newTab(): void;
+  /** Something remote access lists changed (a reply started or ended). */
+  changed?(chat: ChatSession): void;
+  /** The remote access switch, for the Settings panel (set once the extension has made it). */
+  remoteAccess?(): RemoteAccessControl | undefined;
 }
 
-/** Where a message from a screen came from. Remote ones are checked before they get here. */
+/** What the Settings panel needs from remote access (the desktop page only; remote devices cannot reach it). */
+export interface RemoteAccessControl {
+  readonly running: boolean;
+  start(showLink: boolean): Promise<void>;
+  stop(): Promise<void>;
+  showLink(): Promise<void>;
+}
+
+/** Where a message from a screen came from. Remote ones are checked before they get here; `device` is its name. */
 export type MessageOrigin = { kind: "desktop" } | { kind: "remote"; device: string };
 
-/** A remote screen's link to a chat: what it sends goes to `receive`. */
-export interface RemoteConnection {
-  receive(msg: { type: string; [k: string]: unknown }): Promise<void>;
-  dispose(): void;
-}
+/** A screen that only exists to be a source in `onMessage` (remote messages have no page to answer). */
+const NO_PAGE: UiTarget = { postMessage: () => undefined };
 
-export class ChatSession {
+export class ChatSession implements RemoteChat {
   /** Stable for the life of the tab (the engine's session id can change). */
   readonly id = randomUUID();
   // The VS Code webview of this tab or view; remote screens are in `targets` too.
@@ -124,22 +135,44 @@ export class ChatSession {
     return this.label;
   }
 
-  /**
-   * A remote screen joins this chat. It gets messages after it sends "ready"
-   * (then a snapshot of the chat first). The caller checks what a remote
-   * device may send before passing it to `receive`.
-   */
-  connectRemote(target: UiTarget, device: string): RemoteConnection {
-    this.targets.add(target, "remote");
-    return {
-      receive: (msg) => this.onMessage(msg, target, { kind: "remote", device }),
-      dispose: () => this.targets.remove(target),
-    };
+  /** Tell the desktop page whether remote access is on (its Settings checkbox). Not recorded: remote pages never see it. */
+  pushRemoteState(): void {
+    const control = this.hooks.remoteAccess?.();
+    if (control) {
+      this.targets.postToDesktop({ type: "remoteState", running: control.running });
+    }
   }
 
-  /** Remote screens currently showing this chat. */
-  get remoteScreens(): number {
-    return this.targets.remoteCount;
+  // --- RemoteChat: what remote access needs from a chat ---
+
+  /** A reply is running (shown in the chat list on a remote device). */
+  get busy(): boolean {
+    return this.transport?.mode === "persistent" && this.transport.client.turnRunning;
+  }
+
+  /** The chat so far, for a remote page that has nothing yet. */
+  snapshot(): unknown[] {
+    return this.transcript.replay();
+  }
+
+  /** Live messages for remote access (one listener per chat; it fans out itself). */
+  subscribe(listener: (msg: unknown) => void): () => void {
+    const target: UiTarget = { postMessage: listener };
+    this.targets.add(target, "remote");
+    this.targets.markReady(target); // it gets its snapshot from `snapshot()`, not from a resync
+    return () => this.targets.remove(target);
+  }
+
+  /** A message from a remote device that passed the policy (see remote/remotePolicy.ts). */
+  async send(msg: RemoteMessage, device: { id: string; name: string }): Promise<void> {
+    if (msg.type === "ready") {
+      // The page already has its snapshot; only the engine may still need starting.
+      if (!this.transport) {
+        void this.ensureStarted();
+      }
+      return;
+    }
+    await this.onMessage(msg, NO_PAGE, { kind: "remote", device: device.name });
   }
 
   // --- UI message handling ---
@@ -147,11 +180,33 @@ export class ChatSession {
   private async onMessage(
     msg: { type: string; [k: string]: unknown },
     source: UiTarget,
-    _origin: MessageOrigin
+    origin: MessageOrigin
   ): Promise<void> {
     switch (msg.type) {
+      case "remoteAccess":
+      case "remoteLink": {
+        const control = this.hooks.remoteAccess?.();
+        if (origin.kind !== "desktop" || !control) {
+          return;
+        }
+        try {
+          if (msg.type === "remoteLink") {
+            await control.showLink();
+          } else if (msg.on === true) {
+            await control.start(true);
+          } else {
+            await control.stop();
+          }
+        } finally {
+          this.pushRemoteState(); // also puts the checkbox back if starting failed
+        }
+        return;
+      }
       case "ready":
         this.targets.markReady(source);
+        if (origin.kind === "desktop") {
+          this.pushRemoteState();
+        }
         if (this.pendingUiMessage && this.targets.kindOf(source) === "desktop") {
           deliver(source, this.pendingUiMessage);
           this.pendingUiMessage = undefined;
@@ -172,12 +227,16 @@ export class ChatSession {
         this.cancelTurn();
         break;
       case "approve":
-        this.handleApproval(String(msg.toolCallId ?? ""), {
-          optionId: String(msg.optionId ?? ""),
-          ...(isRuleKind(msg.rule) ? { rule: msg.rule } : {}),
-          ...(typeof msg.folder === "string" ? { folder: msg.folder } : {}),
-          ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
-        });
+        this.handleApproval(
+          String(msg.toolCallId ?? ""),
+          {
+            optionId: String(msg.optionId ?? ""),
+            ...(isRuleKind(msg.rule) ? { rule: msg.rule } : {}),
+            ...(typeof msg.folder === "string" ? { folder: msg.folder } : {}),
+            ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
+          },
+          origin
+        );
         break;
       case "steerPrompt":
         await this.handleSteer(cleanSteer(msg.text));
@@ -327,28 +386,44 @@ export class ChatSession {
     }
   }
 
-  private handleApproval(toolCallId: string, answer: ApprovalAnswer): void {
+  private handleApproval(toolCallId: string, answer: ApprovalAnswer, origin: MessageOrigin): void {
     if (this.transport?.mode !== "persistent") {
       return;
     }
-    this.transcript.dropApprovalCard(toolCallId);
+    const remote = origin.kind === "remote";
     // Answer the specific pending request for this tool call. Fall back to the
-    // only pending request if the UI didn't supply a toolCallId.
+    // only pending request if the UI didn't supply a toolCallId (the desktop
+    // page only; a remote device must name the approval it answers).
     let requestId = this.pendingApprovals.get(toolCallId);
-    if (requestId === undefined && this.pendingApprovals.size === 1) {
+    if (requestId === undefined && !remote && this.pendingApprovals.size === 1) {
       requestId = [...this.pendingApprovals.values()][0];
     }
     if (requestId === undefined) {
       return;
     }
+    let kind: string;
     try {
-      this.transport.client.respondToApproval(requestId, answer);
+      kind = this.transport.client.respondToApproval(requestId, answer, { onceOnly: remote });
     } catch (err) {
-      // A folder rule with an invalid folder (the webview checks it first).
-      this.post({ type: "error", message: errorMessage(err) });
+      // A folder rule with an invalid folder (the webview checks it first), or a
+      // remote device asking for more than allow or deny once. Still waiting.
+      this.post(remote ? { type: "notice", text: errorMessage(err) } : { type: "error", message: errorMessage(err) });
       return;
     }
+    this.transcript.dropApprovalCard(toolCallId);
     this.pendingApprovals.delete(toolCallId);
+    // Other screens still show the card: tell them it was answered, and by whom.
+    const allowed = kind.startsWith("allow");
+    this.post({
+      type: "event",
+      event: {
+        kind: "approvalResolved",
+        toolCallId,
+        requestId,
+        allowed,
+        label: `${allowed ? "Allowed" : "Denied"} ${remote ? `from ${origin.device}` : "on the desktop"}`,
+      },
+    });
   }
 
   /** The user answered (or skipped) the agent's question. */
@@ -831,6 +906,9 @@ export class ChatSession {
     this.transcript.record(msg);
     if (m?.type === "event" && m.event?.kind === "runFinished") {
       this.pendingApprovals.clear(); // the reply is over; the webview drops the cards
+    }
+    if (m?.type === "event" && (m.event?.kind === "runStarted" || m.event?.kind === "runFinished")) {
+      this.hooks.changed?.(this); // the chat list on remote devices shows who is busy
     }
     if (m?.type === "event" && m.event?.kind === "approvalResolved") {
       // Answered by a rule: nothing left to answer.

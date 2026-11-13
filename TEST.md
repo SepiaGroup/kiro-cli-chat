@@ -92,6 +92,19 @@ Then run **Developer: Reload Window**.
 - [ ] Turn the network off, send a prompt: the message says it is a network error and what to try.
 - [ ] Rate limit (only when it happens): a red line with the engine's message; the reply still finishes.
 
+### Remote access (localhost preview)
+- [ ] Open ⚙ Settings in a chat: the panel has a clear border and shadow, and the Resume panel too. At the bottom, **Remote access** is unchecked. Tick it: remote access starts and the pairing link notice appears; the checkbox stays ticked and **Show pairing link** shows. Untick it: remote access stops. Starting it from the status bar menu or the command ticks the box in every open chat. The browser page's Settings has no Remote access row.
+- [ ] Run **Kiro CLI Chat: Start Remote Access**. The status bar shows **Remote**. Choose **Open in Browser**: the page opens in your browser, the address bar loses the `#k=...` part, and the chat shows the same conversation as the VS Code tab. With two chats open, a picker lists both (and remembers the last one next time).
+- [ ] Send a prompt from the browser: it appears in the VS Code chat too, and the reply streams in both. Stop works from the browser.
+- [ ] Autopilot off, ask for a command that needs approval: the card shows in both screens. Allow it in the browser: the card disappears in VS Code with a line "Allowed from <your browser>". Do it the other way round too ("Allowed on the desktop" in the browser). Deny with a reason works.
+- [ ] In the browser the approval card offers allow-rule buttons; clicking one does not create a rule (it says a remote device can only allow or deny once, and the request stays open in VS Code).
+- [ ] A question from the agent can be answered from the browser.
+- [ ] Reload the browser tab mid-reply: the conversation comes back and keeps streaming, nothing twice. Reopen the same link: it says the link is no longer valid. **Show Remote Access Link** gives a new one; the already paired browser needs no link.
+- [ ] **Remove Remote Device…**: the browser shows "This device was removed" and cannot reconnect. **Stop Remote Access**: the page shows it cannot reach VS Code.
+- [ ] Close a chat tab in VS Code: a browser showing it is told it was closed and offers the other chats.
+- [ ] Untrusted workspace: Start Remote Access refuses with a message.
+- [ ] Restart VS Code: remote access is off unless `kiroCliChat.remote.autoStart` is on; paired devices are still paired.
+
 ### Stopping a reply (webview)
 - [ ] While the agent works, a Stop button (square) shows next to Send; it is hidden when idle. Click it: the label says "Stopping", then "■ Cancelled", and Stop disappears. The next message works.
 - [ ] Esc in the message box does the same. With the Settings or Resume panel open, Esc closes the panel first and does not stop the reply.

@@ -34,6 +34,9 @@ test("only the listed message types get through", () => {
     "attachPaths",
     "debugLog",
     "setAutoApprove",
+    "remoteAccess",
+    "remoteLink",
+    "remoteState",
     "__proto__",
     "constructor",
   ]) {

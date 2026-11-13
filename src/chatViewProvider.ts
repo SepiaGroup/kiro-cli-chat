@@ -2,7 +2,7 @@
 // view, each its own conversation (ChatSession) with its own engine.
 
 import * as vscode from "vscode";
-import { ChatSession, ChatSessionHooks } from "./chatSession";
+import { ChatSession, ChatSessionHooks, RemoteAccessControl } from "./chatSession";
 
 /** Webview state saved per chat so a reload can reopen its session. */
 interface ChatState {
@@ -18,12 +18,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private active?: ChatSession;
   private lastTab?: vscode.WebviewPanel;
   private tabCount = 0;
+  private readonly changed = new vscode.EventEmitter<void>();
+  /** The set of chats, or whether one is busy, changed (remote access lists them). */
+  readonly onDidChangeChats = this.changed.event;
   private readonly hooks: ChatSessionHooks = {
     onActive: (chat) => {
       this.active = chat;
     },
     newTab: () => this.newTab(),
+    changed: () => this.changed.fire(),
+    remoteAccess: () => this.remoteControl,
   };
+  private remoteControl?: RemoteAccessControl;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -46,6 +52,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     const chat = this.panelChat;
     chat.attach(webviewView.webview);
+    this.changed.fire();
     webviewView.onDidDispose(() => chat.detach(webviewView.webview));
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
@@ -98,6 +105,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       sessionIdOf(state)
     );
     this.tabs.set(panel, chat);
+    this.changed.fire();
     this.active = chat;
     this.lastTab = panel;
     chat.attach(panel.webview);
@@ -110,6 +118,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     panel.onDidDispose(() => {
       chat.dispose();
       this.tabs.delete(panel);
+      this.changed.fire();
       if (this.active === chat) {
         this.active = undefined;
       }
@@ -148,7 +157,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this.target()?.login();
   }
 
+  /** Remote access, for the Settings panel's switch. `changes` fires when it starts or stops. */
+  setRemoteAccess(control: RemoteAccessControl, changes: vscode.Event<void>): vscode.Disposable {
+    this.remoteControl = control;
+    return changes(() => this.chats().forEach((c) => c.pushRemoteState()));
+  }
+
+  /** Every open chat: the panel view's and each tab's. */
+  chats(): ChatSession[] {
+    return [...(this.panelChat ? [this.panelChat] : []), ...this.tabs.values()];
+  }
+
   dispose(): void {
+    this.changed.dispose();
     this.panelChat?.dispose();
     for (const chat of this.tabs.values()) {
       chat.dispose();
