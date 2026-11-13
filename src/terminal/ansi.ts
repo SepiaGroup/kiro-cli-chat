@@ -153,3 +153,9 @@ export function rowsBelowStart(width: number, cols: number): number {
   }
   return width % cols === 0 ? width / cols - 1 : Math.floor(width / cols);
 }
+
+/** Shorten to `max` visible characters (drops styling if it has to cut). */
+export function truncate(s: string, max: number): string {
+  const plain = stripAnsi(s);
+  return plain.length > max ? plain.slice(0, Math.max(1, max - 1)) + "…" : s;
+}

@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { AcpClient } from "../acpClient";
 import { errorMessage } from "../format";
 import { AvailableCommand, ConfigOption, PromptImage } from "../types";
-import { fitAnsi, sanitize, style, stripAnsi } from "./ansi";
+import { fitAnsi, sanitize, style, truncate } from "./ansi";
 import { tokenize } from "./slashCommands";
 
 export interface TranscriptEntry {
@@ -753,11 +753,6 @@ function bar(pct: number, width: number): string {
 
 function formatNumber(n: number): string {
   return Number.isInteger(n) ? n.toLocaleString("en-US") : n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
-
-function truncate(s: string, max: number): string {
-  const plain = stripAnsi(s);
-  return plain.length > max ? plain.slice(0, Math.max(1, max - 1)) + "…" : s;
 }
 
 function oneLine(s: string): string {
