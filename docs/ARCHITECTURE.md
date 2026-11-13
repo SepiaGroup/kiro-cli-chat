@@ -35,7 +35,13 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │         └─ webviewInput.ts    validation of what the webview posts
 │
 ├─ terminal/terminalChat.ts  TerminalChat: one text-mode chat per terminal
-│    ├─ terminalCommands.ts  slash-command implementations (TerminalCommands)
+│    │                       (lifecycle, input routing, prompt, spinner, turns)
+│    ├─ approvalPrompt.ts    approval keys and screens, queue (pure)
+│    ├─ toolLog.ts           tool call lines, diffs, completion (pure)
+│    ├─ menuState.ts         the "/" menu under the prompt (pure)
+│    ├─ sessionConfig.ts     the engine's session settings (pure)
+│    ├─ localCommands.ts     dispatcher + help/model/effort/autopilot/tools/config/resume (pure)
+│    ├─ terminalCommands.ts  the other slash commands (TerminalCommands)
 │    ├─ slashCommands.ts     command specs, parsing, the "/" menu
 │    ├─ lineEditor.ts        raw-input line editor (history, multi-line, footer)
 │    ├─ ansiMarkdown.ts      streaming markdown → ANSI

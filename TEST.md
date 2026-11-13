@@ -15,8 +15,10 @@ npm test          # builds dist-test/ and runs node --test
 All three must exit 0. The tests cover the event mapper, approval rules,
 JSON line parser, markdown (HTML and ANSI), line diff, line editor,
 slash-command parsing and menu, image-path detection, the chat-tab manager
-(with a fake `vscode`), and `AcpClient` against a fake engine process
-(handshake, timeouts, cancelled turns, unknown requests, the engine dying).
+(with a fake `vscode`), `AcpClient` against a fake engine process
+(handshake, timeouts, cancelled turns, unknown requests, the engine dying),
+the terminal approval prompt, tool log, menu and local commands, and a
+whole terminal-chat turn against a fake kiro-cli.
 CI (`.github/workflows/ci.yml`) runs them plus `npm run package` on every
 push and pull request.
 
