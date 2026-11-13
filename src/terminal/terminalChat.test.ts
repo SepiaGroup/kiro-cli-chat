@@ -46,6 +46,17 @@ process.stdin.on("data", (c) => {
     if (msg.method === "initialize") send({ id: msg.id, result: { protocolVersion: 1 } });
     else if (msg.method === "session/new") send({ id: msg.id, result: { sessionId: "s1" } });
     else if (msg.method === "session/set_config_option") send({ id: msg.id, result: {} });
+    else if (msg.method === "session/prompt" && msg.params.prompt[0].text.includes("ask me")) {
+      waiting = (m) => {
+        update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "You picked " + JSON.stringify(m.result) } });
+        send({ id: msg.id, result: { stopReason: "end_turn" } });
+      };
+      send({ id: "q-1", method: "_kiro/userInput", params: { sessionId: "s1", toolCallId: "q1", question: "Pick **one**", options: [{ title: "red" }, { title: "blue", recommended: true }] } });
+    }
+    else if (msg.method === "session/prompt" && msg.params.prompt[0].text.includes("attached_file")) {
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "GOT " + JSON.stringify(msg.params.prompt[0].text) } });
+      send({ id: msg.id, result: { stopReason: "end_turn" } });
+    }
     else if (msg.method === "session/prompt") {
       update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello **there**.\\n" } });
       update({ sessionUpdate: "tool_call", toolCallId: "tc1", title: "Run find .", status: "pending" });
@@ -70,6 +81,8 @@ process.stdin.on("data", (c) => {
 );
 chmodSync(cli, 0o755);
 test.after(() => rmSync(dir, { recursive: true, force: true }));
+
+writeFileSync(join(dir, "n.txt"), "remember the milk");
 
 const settings: Record<string, unknown> = { kiroCliPath: cli, defaultEngine: "v3", autopilot: false };
 const fakeVscode = {
@@ -132,6 +145,37 @@ test("a turn: streamed reply, tool card, approval answered with y, footer", asyn
     await until("menu", () => text().includes("/help"));
     chat.handleInput("\r");
     await until("help", () => text().includes("Commands"));
+  } finally {
+    chat.close();
+  }
+});
+
+test("a question from the agent is answered with the keyboard; @file: is attached", async () => {
+  const chat = new TerminalChat({ appendLine: () => undefined } as never, "Kiro Chat");
+  let screen = "";
+  chat.onDidWrite((s) => (screen += s));
+  const text = () => stripAnsi(screen).replace(/\r\n/g, "\n");
+  const send = (line: string) => {
+    for (const ch of line) {
+      chat.handleInput(ch);
+    }
+    chat.handleInput("\r");
+  };
+  chat.open({ columns: 100, rows: 30 });
+  try {
+    await until("ready", () => text().includes("Ready · engine v3"));
+    send("please ask me something");
+    await until("question", () => text().includes("[2] blue (recommended)"));
+    assert.match(text(), /\? Pick one\n {2}\[1\] red/);
+    chat.handleInput("\r"); // empty answer = the recommended choice
+    await until("answer", () => text().includes("Time:"));
+    assert.match(text(), /→ You answered: blue/);
+    assert.match(text(), /You picked \{"action":"answered","answer":"blue"\}/);
+
+    screen = "";
+    send("what is in @file:n.txt?");
+    await until("echo", () => text().includes("GOT"));
+    assert.match(text(), /GOT .*attached_file.*remember the milk/);
   } finally {
     chat.close();
   }

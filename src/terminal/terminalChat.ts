@@ -18,6 +18,7 @@ import { findImagePaths, imageMimeForPath } from "./imagePaths";
 import { LineEditor } from "./lineEditor";
 import { LocalCommands } from "./localCommands";
 import { MenuState } from "./menuState";
+import { QuestionPrompt } from "./questionPrompt";
 import { SessionConfig } from "./sessionConfig";
 import { findCommand, MenuValue, ValueSource } from "./slashCommands";
 import { ChatHost, TerminalCommands, TranscriptEntry, TurnStat, UserTurn } from "./terminalCommands";
@@ -69,6 +70,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
   private turnCredits?: number;
   private readonly toolLog = new ToolLog();
   private readonly approvals: ApprovalPrompt;
+  private readonly questions: QuestionPrompt;
   private toolGroups: Array<{ tag: string; description: string }> = [];
   private lastInterrupt = 0;
   private cancelled = false;
@@ -114,6 +116,13 @@ export class TerminalChat implements vscode.Pseudoterminal {
       clearScreen: () => this.clearScreen(),
       exit: () => this.exit(),
     });
+    this.questions = new QuestionPrompt({
+      print: (t) => this.print(t),
+      write: (t) => this.write(t),
+      cols: () => this.cols,
+      canRespond: () => this.client !== undefined,
+      respond: (id, answer) => this.requireClient().answerQuestion(id, answer),
+    });
     this.approvals = new ApprovalPrompt({
       print: (t) => this.print(t),
       write: (t) => this.write(t),
@@ -157,6 +166,10 @@ export class TerminalChat implements vscode.Pseudoterminal {
     }
     if (this.approvals.active) {
       this.approvals.handleKey(data);
+      return;
+    }
+    if (this.questions.active) {
+      this.questions.handleKey(data);
       return;
     }
     if (this.state === "idle" && this.handleMenuKey(data)) {
@@ -296,6 +309,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
       }
       this.client = undefined;
       this.approvals.clear();
+      this.questions.clear();
       this.endAssistant();
       this.print(style.red(`Engine exited (code ${String(code)}).`) + style.gray(" Type /restart to start it again."));
     });
@@ -371,6 +385,15 @@ export class TerminalChat implements vscode.Pseudoterminal {
         break;
       case "approvalResolved":
         this.approvals.resolved(ev);
+        break;
+      case "question":
+        if (!this.questions.active && !this.approvals.active) {
+          this.endAssistant();
+        }
+        this.questions.enqueue(ev.question, ev.requestId);
+        break;
+      case "questionResolved":
+        this.questions.dropped(ev.requestId);
         break;
       case "contextUsage":
         this.usagePct = ev.usagePercentage;
@@ -504,6 +527,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     this.endAssistant();
     this.stopSpinner();
     this.approvals.clear();
+    this.questions.clear();
     // "▸ Credits: 0.09 • Time: 2s" (like the Kiro CLI).
     const parts: string[] = [];
     // Set by "metering" events during the await above.
@@ -625,6 +649,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     this.client?.dispose();
     this.client = undefined;
     this.approvals.clear();
+    this.questions.clear();
     this.config.clear();
     this.usagePct = undefined;
     this.updatePrompt();
@@ -886,7 +911,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
 
   private tickSpinner(): void {
     // Only on an empty line, never over the prompt or a pending approval.
-    if (!this.md.atLineStart || this.editor.isDrawn || this.approvals.active || this.isClosed()) {
+    if (!this.md.atLineStart || this.editor.isDrawn || this.approvals.active || this.questions.active || this.isClosed()) {
       return;
     }
     const frame = SPINNER[this.spinnerFrame++ % SPINNER.length];

@@ -5,7 +5,10 @@
 /** Most messages kept; older ones are dropped. */
 export const MAX_TRANSCRIPT = 20000;
 
-type Msg = { type?: string; event?: { kind?: string; toolCallId?: string; request?: { toolCallId?: string } } };
+type Msg = {
+  type?: string;
+  event?: { kind?: string; toolCallId?: string; request?: { toolCallId?: string }; question?: { toolCallId?: string } };
+};
 
 export class ChatTranscript {
   private messages: unknown[] = [];
@@ -43,6 +46,10 @@ export class ChatTranscript {
             // Answered by a rule: no card to restore.
             this.dropApprovalCard(m.event?.toolCallId ?? "");
           }
+          if (kind === "questionResolved") {
+            this.dropQuestionCard(m.event?.toolCallId ?? "");
+            break; // nothing to show for it on restore
+          }
           this.messages.push(msg);
         }
         break;
@@ -60,6 +67,14 @@ export class ChatTranscript {
     this.messages = this.messages.filter((msg) => {
       const m = msg as Msg;
       return !(m.type === "event" && m.event?.kind === "approvalRequest" && (m.event.request?.toolCallId ?? "") === toolCallId);
+    });
+  }
+
+  /** Same for the agent's questions. */
+  dropQuestionCard(toolCallId: string): void {
+    this.messages = this.messages.filter((msg) => {
+      const m = msg as Msg;
+      return !(m.type === "event" && m.event?.kind === "question" && (m.event.question?.toolCallId ?? "") === toolCallId);
     });
   }
 

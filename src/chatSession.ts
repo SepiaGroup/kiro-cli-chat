@@ -21,7 +21,7 @@ import { ChatTranscript } from "./chatTranscript";
 import { errorMessage } from "./format";
 import { pickSessions } from "./sessionList";
 import { webviewHtml } from "./webviewHtml";
-import { MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
+import { cleanAnswer, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
 type Transport =
   | { mode: "persistent"; client: AcpClient }
@@ -46,6 +46,8 @@ export class ChatSession {
   private resumeSessionId?: string;
   // Map ACP server-request id -> approval toolCallId, for persistent mode.
   private pendingApprovals = new Map<string, RpcId>();
+  // Same for the agent's questions: toolCallId -> ACP server-request id.
+  private pendingQuestions = new Map<string, RpcId>();
   // What the chat shows, replayed into a re-created webview.
   private readonly transcript = new ChatTranscript();
   private disposed = false;
@@ -131,6 +133,9 @@ export class ChatSession {
           ...(typeof msg.folder === "string" ? { folder: msg.folder } : {}),
           ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
         });
+        break;
+      case "answerQuestion":
+        this.handleQuestionAnswer(String(msg.toolCallId ?? ""), cleanAnswer(msg.answer));
         break;
       case "newSession":
         await this.newSession();
@@ -268,6 +273,20 @@ export class ChatSession {
       return;
     }
     this.pendingApprovals.delete(toolCallId);
+  }
+
+  /** The user answered (or skipped) the agent's question. */
+  private handleQuestionAnswer(toolCallId: string, answer: string | undefined): void {
+    if (this.transport?.mode !== "persistent") {
+      return;
+    }
+    this.transcript.dropQuestionCard(toolCallId);
+    const requestId = this.pendingQuestions.get(toolCallId);
+    if (requestId === undefined) {
+      return;
+    }
+    this.pendingQuestions.delete(toolCallId);
+    this.transport.client.answerQuestion(requestId, answer);
   }
 
   /** Live mode switch (vibe/plan/spec/…) via ACP session/set_mode. */
@@ -458,7 +477,14 @@ export class ChatSession {
   }
 
   private wireClient(client: AcpClient): void {
-    client.on("event", (ev: ChatEvent) => this.post({ type: "event", event: ev }));
+    client.on("event", (ev: ChatEvent) => {
+      if (ev.kind === "question") {
+        this.pendingQuestions.set(ev.question.toolCallId, ev.requestId);
+      } else if (ev.kind === "questionResolved") {
+        this.pendingQuestions.delete(ev.toolCallId);
+      }
+      this.post({ type: "event", event: ev });
+    });
     client.on("log", (line: string) => this.log("[acp] " + line));
     client.on("permissionRequest", (requestId: RpcId, params: unknown) => {
       const p = (params ?? {}) as Record<string, unknown>;
@@ -700,6 +726,7 @@ export class ChatSession {
 
   private disposeTransport(): void {
     this.pendingApprovals.clear();
+    this.pendingQuestions.clear();
     if (this.transport?.mode === "persistent") {
       this.transport.client.dispose();
     } else if (this.transport?.mode === "one-shot") {

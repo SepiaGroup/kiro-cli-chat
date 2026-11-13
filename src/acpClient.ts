@@ -8,7 +8,10 @@ import { JsonLineParser, lineSplitter } from "./jsonLineParser";
 import { mapPermissionRequest, mapSessionUpdate } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
 import { checkFolder, cleanReason, folderResource, isShell } from "./approvalRules";
-import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
+import { expandFileMentions } from "./fileMentions";
+import { formatDuration } from "./format";
+import { mapUserInput } from "./questions";
+import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage, Question, RpcId } from "./types";
 
 export interface AcpClientOptions {
   cliPath: string;
@@ -18,6 +21,8 @@ export interface AcpClientOptions {
   trustAllTools?: boolean;
   /** Override request timeouts (tests). */
   timeoutsMs?: Record<string, number>;
+  /** Override how long a prompt may get no reply at all before it's cancelled (tests). */
+  initialResponseTimeoutMs?: number;
 }
 
 type PendingResolver = {
@@ -38,6 +43,14 @@ const TIMEOUTS_MS: Record<string, number> = {
   "session/set_config_option": 30_000,
 };
 
+/**
+ * A turn that gets no event at all this long after the prompt is cancelled,
+ * like the kiro-cli TUI (10 minutes). After the first event there's no limit
+ * (a build can be silent for a long time), but a quiet turn is logged.
+ */
+const INITIAL_RESPONSE_TIMEOUT_MS = 600_000;
+const QUIET_LOG_AFTER_MS = 30_000;
+
 /** How long to wait after SIGTERM before SIGKILL on dispose. */
 const KILL_AFTER_MS = 3000;
 
@@ -52,6 +65,10 @@ export class AcpClient extends EventEmitter {
   private autoApprove = false;
   /** Permission requests waiting for an answer, by JSON-RPC id. */
   private pendingPermissions = new Map<RpcId, ApprovalRequest>();
+  /** Questions from the agent waiting for an answer, by JSON-RPC id. */
+  private pendingQuestions = new Map<RpcId, Question>();
+  /** Set while a prompt runs: called for every sign of life from the engine. */
+  private onActivity?: () => void;
   private readonly stderrTail: string[] = [];
 
   constructor(private readonly opts: AcpClientOptions) {
@@ -131,6 +148,9 @@ export class AcpClient extends EventEmitter {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
+        // Tell the engine we can show its questions (`_kiro/userInput`);
+        // without this it asks in prose or skips them.
+        _meta: { kiro: { userInput: true } },
       },
     });
     this.initialized = true;
@@ -180,11 +200,18 @@ export class AcpClient extends EventEmitter {
       throw new Error("ACP client not ready");
     }
     this.emit("event", { kind: "runStarted", engine: this.opts.engine } as ChatEvent);
+    // `@file:path` puts the file in the prompt, like the kiro-cli TUI. The chat
+    // history (and a resumed session) keeps showing what was typed.
+    const mentions = expandFileMentions(text, this.opts.cwd);
+    for (const s of mentions.skipped) {
+      this.emit("log", `@file:${s.path} was not attached (${s.reason})`);
+    }
+    const meta = mentions.attached.length > 0 ? { kiro: { displayText: text } } : undefined;
     // The engine advertises promptCapabilities.image, so images go in as
     // standard ACP image content blocks alongside the text.
     const prompt: Array<Record<string, unknown>> = [];
-    if (text.trim()) {
-      prompt.push({ type: "text", text });
+    if (mentions.text.trim()) {
+      prompt.push({ type: "text", text: mentions.text });
     }
     for (const img of images) {
       prompt.push({ type: "image", mimeType: img.mimeType, data: img.data });
@@ -192,15 +219,62 @@ export class AcpClient extends EventEmitter {
     // Always report the end of the turn, so the UI leaves its busy state.
     let status = "error";
     let stopReason: string | undefined;
+    const watchdog = this.startWatchdog();
     try {
-      const res = (await this.request("session/prompt", { sessionId: this.sessionId, prompt })) as
-        | { stopReason?: unknown }
-        | undefined;
+      const turn = this.request("session/prompt", { sessionId: this.sessionId, prompt, ...(meta ? { _meta: meta } : {}) });
+      turn.catch(() => undefined); // if the watchdog wins, a late failure isn't "unhandled"
+      const res = (await Promise.race([turn, watchdog.failed])) as { stopReason?: unknown } | undefined;
       stopReason = typeof res?.stopReason === "string" ? res.stopReason : undefined;
       status = stopReason === "cancelled" ? "cancelled" : stopReason === "refusal" ? "error" : "success";
     } finally {
+      watchdog.stop();
+      // The turn is over, so nobody is waiting for these any more.
+      this.dropQuestions(false);
       this.emit("event", { kind: "runFinished", status, ...(stopReason ? { stopReason } : {}) } as ChatEvent);
     }
+  }
+
+  /**
+   * Cancel a prompt that gets no reply at all, and log a turn that goes quiet.
+   * `failed` rejects when the engine never answered; `stop` ends the watch.
+   */
+  private startWatchdog(): { failed: Promise<never>; stop: () => void } {
+    const limit = this.opts.initialResponseTimeoutMs ?? INITIAL_RESPONSE_TIMEOUT_MS;
+    let first: NodeJS.Timeout | undefined;
+    let lastEvent = Date.now();
+    let logged = false;
+    const stop = (): void => {
+      clearTimeout(first);
+      clearInterval(quiet);
+      this.onActivity = undefined;
+    };
+    const failed = new Promise<never>((_, reject) => {
+      first = setTimeout(() => {
+        this.emit("log", `no reply from the engine after ${formatDuration(limit)}; cancelling the turn`);
+        this.cancel();
+        reject(
+          new Error(
+            `The Kiro engine sent nothing for ${formatDuration(limit)}, so the turn was cancelled. Send the prompt again, or use Restart if it keeps happening.`
+          )
+        );
+      }, limit);
+      first.unref();
+    });
+    failed.catch(() => undefined);
+    const quiet = setInterval(() => {
+      const silent = Date.now() - lastEvent;
+      if (silent >= QUIET_LOG_AFTER_MS && !logged) {
+        logged = true;
+        this.emit("log", `no events for ${formatDuration(silent)}; the turn may be stuck`);
+      }
+    }, QUIET_LOG_AFTER_MS / 2);
+    quiet.unref();
+    this.onActivity = () => {
+      clearTimeout(first); // the engine is alive: no more first-reply limit
+      lastEvent = Date.now();
+      logged = false;
+    };
+    return { failed, stop };
   }
 
   /**
@@ -241,6 +315,29 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  /**
+   * Answer the agent's question: `answer` is an option's title or typed text;
+   * without one the question is skipped (the agent is told to move on).
+   */
+  answerQuestion(requestId: RpcId, answer?: string): void {
+    if (!this.pendingQuestions.delete(requestId)) {
+      return;
+    }
+    const text = answer?.trim();
+    this.sendResponse(requestId, text ? { action: "answered", answer: text } : { action: "dismissed" });
+  }
+
+  /** Forget waiting questions and tell the UI to remove them. */
+  private dropQuestions(answerEngine: boolean): void {
+    for (const [id, q] of [...this.pendingQuestions]) {
+      this.pendingQuestions.delete(id);
+      if (answerEngine) {
+        this.sendResponse(id, { action: "dismissed" });
+      }
+      this.emit("event", { kind: "questionResolved", toolCallId: q.toolCallId, requestId: id } as ChatEvent);
+    }
+  }
+
   /** Answer other waiting approvals for the same tool after an entire-tool rule. */
   private resolveWaiting(rule: ApprovalRequest, allow: boolean): void {
     const group = (r: ApprovalRequest): string =>
@@ -270,6 +367,7 @@ export class AcpClient extends EventEmitter {
    * v3: the pending session/prompt resolves with stopReason "cancelled".
    */
   cancel(): void {
+    this.dropQuestions(true);
     if (this.sessionId) {
       this.write({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.sessionId } });
     }
@@ -315,6 +413,7 @@ export class AcpClient extends EventEmitter {
 
   dispose(): void {
     this.pendingPermissions.clear();
+    this.pendingQuestions.clear();
     this.rejectAllPending(new Error("disposed"));
     const child = this.child;
     this.child = undefined;
@@ -368,6 +467,7 @@ export class AcpClient extends EventEmitter {
 
     // Server-initiated request (e.g. permission prompt) — has id + method.
     if ((typeof m.id === "number" || typeof m.id === "string") && typeof m.method === "string") {
+      this.onActivity?.();
       this.handleServerRequest(m.id, m.method, m.params);
       return;
     }
@@ -401,6 +501,17 @@ export class AcpClient extends EventEmitter {
       this.emit("permissionRequest", id, params);
       return;
     }
+    if (method === "_kiro/userInput") {
+      const question = mapUserInput(params);
+      if (!question) {
+        this.emit("log", "ignored a question without text");
+        this.sendResponse(id, { action: "dismissed" });
+        return;
+      }
+      this.pendingQuestions.set(id, question);
+      this.emit("event", { kind: "question", question, requestId: id } as ChatEvent);
+      return;
+    }
     // Not something this client implements (we advertise no fs/terminal
     // capabilities): answer "method not found" so the engine doesn't wait.
     this.emit("log", `unsupported engine request: ${method}`);
@@ -409,6 +520,7 @@ export class AcpClient extends EventEmitter {
 
   private handleNotification(method: string, params: unknown): void {
     if (method === "session/update") {
+      this.onActivity?.();
       const data = (params ?? {}) as Record<string, unknown>;
       // ACP wraps the update; reuse the stream-json session-update mapper.
       // Suppress two kinds that don't belong on the ACP path:

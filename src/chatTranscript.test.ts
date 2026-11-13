@@ -42,3 +42,13 @@ test("keeps at most MAX_TRANSCRIPT messages", () => {
   assert.equal(r.length, MAX_TRANSCRIPT);
   assert.equal(r[0].i, 5);
 });
+
+test("answered or cancelled questions don't come back on restore", () => {
+  const t = new ChatTranscript();
+  t.record(ev({ kind: "question", question: { toolCallId: "a" } }));
+  t.record(ev({ kind: "question", question: { toolCallId: "b" } }));
+  t.record(ev({ kind: "question", question: { toolCallId: "c" } }));
+  t.dropQuestionCard("a");
+  t.record(ev({ kind: "questionResolved", toolCallId: "b" }));
+  assert.deepEqual(t.replay(), [ev({ kind: "question", question: { toolCallId: "c" } })]);
+});

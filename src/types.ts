@@ -60,6 +60,10 @@ export type ChatEvent =
   | { kind: "approvalRequest"; request: ApprovalRequest; requestId?: RpcId }
   /** A waiting approval was answered by a rule just created (no card needed). */
   | { kind: "approvalResolved"; toolCallId: string; requestId: RpcId; allowed: boolean; label: string }
+  /** The agent asks a question (the `user_input` tool); answer with `AcpClient.answerQuestion`. */
+  | { kind: "question"; question: Question; requestId: RpcId }
+  /** A waiting question is gone (cancelled or the turn ended): remove its card. */
+  | { kind: "questionResolved"; toolCallId: string; requestId: RpcId }
   | { kind: "contextUsage"; usagePercentage: number; usedTokens?: number; threshold?: number }
   | { kind: "metering"; credits: number }
   /** The engine's id for the user message just sent (used by /rewind). */
@@ -120,6 +124,23 @@ export interface ApprovalRequest {
   denyRules?: ApprovalRule[];
   /** Why the engine's trust classifier wants a person to look at this. */
   flag?: string;
+}
+
+/** One choice offered by the agent's question. */
+export interface QuestionOption {
+  title: string;
+  description?: string;
+  recommended?: boolean;
+  /** Extra items to pick from after choosing this option (all start selected). */
+  subOptionsLabel?: string;
+  subOptions?: Array<{ title: string; description?: string }>;
+}
+
+/** A question from the agent, with choices. The user may also type an answer. */
+export interface Question {
+  toolCallId: string;
+  question: string;
+  options: QuestionOption[];
 }
 
 /** How the user answered an approval. */

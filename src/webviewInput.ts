@@ -6,6 +6,14 @@ import type { PromptImage } from "./types";
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGES = 10;
+/** Longest typed answer to the agent's question. */
+export const MAX_ANSWER = 4000;
+
+/** An answer from the webview to the agent's question; undefined = skipped. */
+export function cleanAnswer(raw: unknown): string | undefined {
+  const text = typeof raw === "string" ? raw.trim().slice(0, MAX_ANSWER) : "";
+  return text || undefined;
+}
 
 /** Validate image attachments posted by the webview before forwarding them. */
 export function sanitizeImages(raw: unknown): PromptImage[] {
