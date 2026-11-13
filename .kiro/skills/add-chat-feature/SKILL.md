@@ -48,8 +48,9 @@ skill first. Don't build on a guessed message shape.
   `LocalCommands.run` (`src/terminal/localCommands.ts`) and implement them
   there (session settings, resume) or in `src/terminal/terminalCommands.ts`
   (everything else). Match kiro-cli's names, keys and wording.
-- Approvals, tool lines and the "/" menu live in `approvalPrompt.ts`,
-  `toolLog.ts` and `menuState.ts`: pure classes with tests.
+- Approvals, questions, tool lines and the "/" menu live in
+  `approvalPrompt.ts`, `questionPrompt.ts`, `toolLog.ts` and `menuState.ts`:
+  pure classes with tests.
 - If the feature can't work here, add it with `unavailable: "<why>"` rather
   than leaving it out.
 

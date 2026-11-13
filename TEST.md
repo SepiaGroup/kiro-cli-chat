@@ -17,8 +17,9 @@ JSON line parser, markdown (HTML and ANSI), line diff, line editor,
 slash-command parsing and menu, image-path detection, the chat-tab manager
 (with a fake `vscode`), `AcpClient` against a fake engine process
 (handshake, timeouts, cancelled turns, unknown requests, the engine dying),
-the terminal approval prompt, tool log, menu and local commands, and a
-whole terminal-chat turn against a fake kiro-cli.
+the terminal approval and question prompts, tool log, menu and local
+commands, `@file:` expansion, and whole terminal-chat turns against a fake
+kiro-cli.
 CI (`.github/workflows/ci.yml`) runs them plus `npm run package` on every
 push and pull request.
 
@@ -86,6 +87,12 @@ Then run **Developer: Reload Window**.
 - [ ] Allow applies the change; Deny skips it.
 - [ ] With `autopilot` on, tools run without asking.
 
+### Questions and files
+- [ ] In Spec mode, ask for something that needs a decision (for example "ask me to pick a color from red, blue, green with your question tool"). A card shows the choices; clicking one sends it and the agent uses it.
+- [ ] Typing your own answer and pressing Enter sends it. Skip tells the agent to move on.
+- [ ] A question left open and then cancelled (Esc, Stop) disappears from the chat. After a window reload an unanswered question card comes back.
+- [ ] `what is in @file:README.md?` → the agent knows the contents; the chat and a Resumed session show `@file:README.md`, not the file's text. `@file:missing.txt` stays as typed. A line in the chat says "Attached: …" and "Not attached: … (reason)". A file over 256 KB or a binary file isn't attached.
+
 ### Commands (Command Palette)
 - [ ] **Restart Engine** and the Restart button ask first; Cancel does nothing.
 - [ ] **New Session** asks first, then clears the chat with a new session.
@@ -101,6 +108,8 @@ Then run **Developer: Reload Window**.
 - [ ] `/help` lists all commands; unknown `/foo` isn't sent to the model.
 - [ ] Spot-check: `/context show`, `/compact`, `/usage`, `/model`, `/rewind` (asks first), `/title`, `/spawn`, `/resume`.
 - [ ] Approvals take `y` / `n` / Tab (reason) / `t` (allow rule) / `d` (deny rule); rules are picked by number, Esc goes back. Compound lines name the command. Esc cancels a reply.
+- [ ] A question from the agent shows numbered choices: a number, your own text, an empty line (recommended choice) and Esc (skip) all work. A choice with sub-options shows a checklist (number keys toggle, Enter sends, Esc goes back).
+- [ ] `@file:path` attaches the file as in the webview chat.
 - [ ] The folder rule's input is prefilled and editable (Backspace, Ctrl+U); an invalid folder prints the reason and asks again.
 
 ### Startup errors

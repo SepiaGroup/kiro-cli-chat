@@ -44,8 +44,23 @@ const BASIC = `(msg, send, ask) => {
   if (msg.method === "session/new") send({ id: msg.id, result: { sessionId: "s1" } });
 }`;
 
-function client(cliPath: string, timeoutsMs?: Record<string, number>): { c: AcpClient; events: ChatEvent[]; logs: string[] } {
-  const c = new AcpClient({ cliPath, engine: "v3", cwd: dir, timeoutsMs });
+/** stderr and stdout are separate pipes, so a log line can arrive after the reply it belongs to. */
+async function eventually(what: string, cond: () => boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) {
+      throw new Error("timed out waiting for " + what);
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+function client(
+  cliPath: string,
+  timeoutsMs?: Record<string, number>,
+  extra: { initialResponseTimeoutMs?: number } = {}
+): { c: AcpClient; events: ChatEvent[]; logs: string[] } {
+  const c = new AcpClient({ cliPath, engine: "v3", cwd: dir, timeoutsMs, ...extra });
   const events: ChatEvent[] = [];
   const logs: string[] = [];
   c.on("event", (e: ChatEvent) => events.push(e));
@@ -89,7 +104,7 @@ test("unknown engine requests get method-not-found, string ids included", async 
   try {
     await c.start();
     await c.prompt("hi");
-    assert.ok(logs.some((l) => l.includes('"code":-32601')), logs.join("\n"));
+    await eventually("the engine's report of the error it got", () => logs.some((l) => l.includes('"code":-32601')));
   } finally {
     c.dispose();
   }
@@ -121,7 +136,7 @@ test("an engine dying mid-turn rejects the prompt, ends the turn and doesn't cra
     assert.equal(await exited, 3);
     assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "error"));
     // stderr split across chunks arrives as one line.
-    assert.ok(logs.includes("boom: partial line"), logs.join("\n"));
+    await eventually("the split stderr line", () => logs.includes("boom: partial line"));
     // Writing after exit is a no-op, not an EPIPE crash.
     c.cancel();
     await assert.rejects(c.setMode("plan"), /isn't running/);
@@ -134,4 +149,153 @@ test("a missing binary fails start with a clear error", async () => {
   const { c } = client(join(dir, "does-not-exist"));
   await assert.rejects(c.start(), /Couldn't start .*ENOENT/);
   c.dispose();
+});
+
+// Engine side of a chat message: the agent's reply as one text chunk.
+const SAY = `(send, text) => send({ method: "session/update", params: { sessionId: "s1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } })`;
+
+function chunks(events: ChatEvent[]): string[] {
+  return events.flatMap((e) => (e.kind === "assistantChunk" ? [e.text] : []));
+}
+
+test("the agent's question is shown, and the answer reaches the engine", async () => {
+  const cli = fakeEngine(
+    "question",
+    `async (msg, send, ask) => {
+      if (msg.method === "initialize") {
+        send({ id: msg.id, result: { protocolVersion: 1, advertised: msg.params.clientCapabilities._meta } });
+      }
+      if (msg.method === "session/new") send({ id: msg.id, result: { sessionId: "s1" } });
+      if (msg.method === "session/prompt") {
+        const a = await ask({ id: "q-1", method: "_kiro/userInput", params: { sessionId: "s1", toolCallId: "t1", question: "Pick", options: [{ title: "red" }, { title: "blue" }] } });
+        (${SAY})(send, JSON.stringify(a.result));
+        send({ id: msg.id, result: { stopReason: "end_turn" } });
+      }
+    }`
+  );
+  const { c, events } = client(cli);
+  let advertised: unknown;
+  c.once("initialized", (r: { advertised?: unknown }) => (advertised = r.advertised));
+  c.on("event", (e: ChatEvent) => {
+    if (e.kind === "question") {
+      c.answerQuestion(e.requestId, "  blue ");
+    }
+  });
+  try {
+    await c.start();
+    assert.deepEqual(advertised, { kiro: { userInput: true } });
+    await c.prompt("go");
+    const q = events.find((e) => e.kind === "question");
+    assert.deepEqual(q && q.kind === "question" && [q.requestId, q.question], ["q-1", { toolCallId: "t1", question: "Pick", options: [{ title: "red" }, { title: "blue" }] }]);
+    assert.deepEqual(chunks(events), ['{"action":"answered","answer":"blue"}']);
+    // Answering twice, or an unknown id, does nothing.
+    c.answerQuestion("q-1", "red");
+    c.answerQuestion("nope", "red");
+  } finally {
+    c.dispose();
+  }
+});
+
+test("cancelling skips the waiting question; a question without text is skipped too", async () => {
+  const cli = fakeEngine(
+    "question-cancel",
+    `async (msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        const bad = await ask({ id: "q-0", method: "_kiro/userInput", params: { question: "" } });
+        const a = await ask({ id: "q-1", method: "_kiro/userInput", params: { toolCallId: "t1", question: "Pick", options: [] } });
+        (${SAY})(send, JSON.stringify([bad.result, a.result]));
+        send({ id: msg.id, result: { stopReason: "cancelled" } });
+      }
+    }`
+  );
+  const { c, events } = client(cli);
+  c.on("event", (e: ChatEvent) => {
+    if (e.kind === "question") {
+      c.cancel();
+    }
+  });
+  try {
+    await c.start();
+    await c.prompt("go");
+    assert.ok(events.some((e) => e.kind === "questionResolved" && e.toolCallId === "t1" && e.requestId === "q-1"));
+    assert.deepEqual(chunks(events), ['[{"action":"dismissed"},{"action":"dismissed"}]']);
+  } finally {
+    c.dispose();
+  }
+});
+
+test("@file: puts the file in the prompt and keeps what was typed as the display text", async () => {
+  writeFileSync(join(dir, "note.txt"), "remember the milk");
+  const cli = fakeEngine(
+    "mention",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        (${SAY})(send, JSON.stringify({ blocks: msg.params.prompt, meta: msg.params._meta }));
+        send({ id: msg.id, result: { stopReason: "end_turn" } });
+      }
+    }`
+  );
+  const { c, events, logs } = client(cli);
+  try {
+    await c.start();
+    await c.prompt("what is in @file:note.txt and @file:missing.txt?");
+    const sent = JSON.parse(chunks(events)[0]);
+    assert.deepEqual(sent.blocks, [
+      { type: "text", text: 'what is in <attached_file path="note.txt"> remember the milk </attached_file> and @file:missing.txt?' },
+    ]);
+    assert.deepEqual(sent.meta, { kiro: { displayText: "what is in @file:note.txt and @file:missing.txt?" } });
+    assert.ok(events.some((e) => e.kind === "notice" && e.text === "Attached: note.txt. Not attached: missing.txt (not a file)."));
+    assert.ok(logs.includes("@file:missing.txt was not attached (not a file)"), logs.join("\n"));
+    // No attachment: nothing extra is sent.
+    events.length = 0;
+    await c.prompt("plain");
+    assert.deepEqual(JSON.parse(chunks(events)[0]), { blocks: [{ type: "text", text: "plain" }] });
+    assert.ok(!events.some((e) => e.kind === "notice"));
+  } finally {
+    c.dispose();
+  }
+});
+
+test("a prompt the engine never answers is cancelled and fails with a clear error", async () => {
+  const cli = fakeEngine(
+    "silent",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/cancel") process.stderr.write("engine got cancel\\n");
+    }`
+  );
+  const { c, events, logs } = client(cli, undefined, { initialResponseTimeoutMs: 200 });
+  try {
+    await c.start();
+    await assert.rejects(c.prompt("hi"), /sent nothing for 0s, so the turn was cancelled/);
+    assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "error"));
+    assert.ok(logs.some((l) => l.includes("cancelling the turn")));
+    await eventually("the engine's report of the cancel", () => logs.includes("engine got cancel"));
+  } finally {
+    c.dispose();
+  }
+});
+
+test("any sign of life from the engine ends the first-reply limit", async () => {
+  const cli = fakeEngine(
+    "slow",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        setTimeout(() => (${SAY})(send, "thinking"), 50);
+        setTimeout(() => send({ id: msg.id, result: { stopReason: "end_turn" } }), 500);
+      }
+    }`
+  );
+  const { c, events } = client(cli, undefined, { initialResponseTimeoutMs: 200 });
+  try {
+    await c.start();
+    await c.prompt("hi");
+    assert.deepEqual(chunks(events), ["thinking"]);
+    assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "success"));
+  } finally {
+    c.dispose();
+  }
 });

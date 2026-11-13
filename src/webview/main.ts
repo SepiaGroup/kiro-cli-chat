@@ -3,8 +3,9 @@
 // UI, owns the busy/starting state and routes the host's messages; each part
 // of the UI is its own module.
 
-import type { ApprovalRequest } from "../types";
+import type { ApprovalRequest, Question } from "../types";
 import { removeApprovalCard, renderApproval } from "./approvalCard";
+import { removeQuestionCard, renderQuestion } from "./questionCard";
 import { clearAttachments, currentAttachments, initDropAndPaste, insertPaths, pushAttachment } from "./attachments";
 import { CommandLike, handlePickerKeydown, hideHint, hidePicker, setCommands, updateHint, updatePicker } from "./commandPicker";
 import {
@@ -225,6 +226,19 @@ function handleEvent(ev: ChatEventLike): void {
       // Answered by a rule created for another approval (entire tool).
       if (removeApprovalCard(String(ev.toolCallId ?? ""))) {
         addSystem(String(ev.label ?? ""), "");
+      }
+      break;
+    case "notice":
+      addSystem(String(ev.text ?? ""), "");
+      break;
+    case "question":
+      hideWorking();
+      renderQuestion(ev.question as Question);
+      break;
+    case "questionResolved":
+      // Cancelled, or the turn ended before it was answered.
+      if (removeQuestionCard(String(ev.toolCallId ?? ""))) {
+        addSystem("The question was cancelled.", "");
       }
       break;
     case "availableCommands":

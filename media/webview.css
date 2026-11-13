@@ -1014,3 +1014,9 @@ html, body {
   color: var(--vscode-errorForeground);
   opacity: 1;
 }
+
+.question-check {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}

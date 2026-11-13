@@ -37,6 +37,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ terminal/terminalChat.ts  TerminalChat: one text-mode chat per terminal
 │    │                       (lifecycle, input routing, prompt, spinner, turns)
 │    ├─ approvalPrompt.ts    approval keys and screens, queue (pure)
+│    ├─ questionPrompt.ts    the agent's questions: choices, typed answer, checklist (pure)
 │    ├─ toolLog.ts           tool call lines, diffs, completion (pure)
 │    ├─ menuState.ts         the "/" menu under the prompt (pure)
 │    ├─ sessionConfig.ts     the engine's session settings (pure)
@@ -50,6 +51,8 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │
 ├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals (+ consent rules), ext methods
 ├─ approvalRules.ts  approval rule choices + folder checks (shared with the webview)
+├─ questions.ts      the agent's questions: parse `_kiro/userInput`, build the answer text
+├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn
@@ -188,6 +191,25 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   after `echo`, aren't asked).
 - File writes are followed by a separate "Review changes" approval with only
   Allow/Deny and no consent info.
+- Questions: `initialize` carries `clientCapabilities._meta.kiro.userInput:
+  true`. The engine then asks with the server request `_kiro/userInput`
+  (`{sessionId, toolCallId, question, options: [{title, description?,
+  recommended?, subOptionsLabel?, subOptions?}]}`) and the client answers
+  `{action: "answered", answer: "<option title or typed text>"}` or
+  `{action: "dismissed"}`. An option with sub-options is answered
+  `"title [sub1, sub2]"`, like the TUI. Without the capability the engine
+  turns a question with options into a `session/request_permission` whose
+  options are all `allow_once` (the UI can only show "Allow") and skips one
+  without options. Only some modes have the tool (Spec does; Vibe and Plan
+  just ask in prose). On cancel or turn end the client drops the question.
+- Prompt extras: `session/prompt` accepts `_meta.kiro.displayText`. The engine
+  sends the real prompt to the model but shows (and replays on resume) the
+  display text. `@file:path` is expanded by the client, as the TUI does:
+  `<attached_file path="…"> text </attached_file>`; the display text keeps
+  what was typed. Verified live.
+- Watchdog (as in the TUI): no `session/update` or server request within 10
+  minutes of the prompt → `session/cancel` and an error. After the first
+  event there is no limit; a quiet turn is logged after 30 s.
 - Other notifications seen: `_kiro/mcp/status` (`servers: []` when none),
   `_kiro/tools/didChange` (built-in tool tags), `_kiro/memory/syncStatus`.
 

@@ -8,5 +8,8 @@ First release.
   terminal chat, on Macs without AVX/AVX2.
 - Approvals like kiro-cli: Allow, Create allow rule… (exact, command pattern,
   folder, entire tool), Deny, Deny with reason…, Create deny rule….
+- The agent's questions (Spec mode) as a card or numbered choices, with your
+  own answer or Skip. `@file:path` in a prompt attaches the file. A prompt the
+  engine never answers is cancelled after 10 minutes.
 - Model, mode, effort and Autopilot switching; context breakdown and
   compaction; Resume; images; slash commands.

@@ -60,6 +60,15 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
 - **Images.** Paste a screenshot (`Cmd+V`), Shift-drag image files onto the
   chat, or use **Kiro CLI Chat: Attach Image or File**. Dropping other files
   inserts their paths.
+- **Questions.** When the agent asks you something (it does in Spec mode),
+  a card shows the choices. Pick one, or type your own answer. A choice
+  can open a checklist first. Skip tells the agent to move on.
+- **Files in a prompt.** Type `@file:path` (relative to the folder, absolute
+  or `~/…`) and the file's text goes to the agent with your prompt. The chat
+  keeps showing what you typed. Files must be plain text, up to 256 KB each
+  (1 MB per prompt); anything else is left as typed. The chat says which files
+  were attached and which were not. Any path you type is read, also outside the
+  folder (as kiro-cli does), so check pasted text before you send it.
 - **Input.** One line that grows as you type. Enter sends, Shift+Enter adds a
   line. Type `/` for a picker of the engine's commands, agents and skills.
 - **Resume** lists previous sessions for this folder (title, age, message
@@ -82,6 +91,10 @@ list the rules to pick by number (exact, pattern, folder, entire tool); Esc
 goes back. The prompt shows the context used (`17% >`,
 or `17% !>` with Autopilot), and each reply ends with
 `▸ Credits: … • Time: …`.
+
+The agent's questions show as numbered choices: type a number or your own
+answer, Enter sends (an empty line takes the recommended choice), Esc skips.
+`@file:path` in a prompt attaches that file, as in the webview chat.
 
 Type `/` for a menu of commands: it filters as you type, ↑/↓ selects, Tab
 completes, Enter runs, Esc hides it. After a command it suggests subcommands
@@ -151,6 +164,10 @@ own messages.
   `kiro-cli chat --agent-engine v3` in a terminal. If that crashes with
   `illegal hardware instruction` (SIGILL), your kiro-cli version needs AVX even
   for the engine; try updating it.
+- **"The Kiro engine sent nothing for 10m 0s"**: the engine never replied to
+  your prompt, so the turn was cancelled. Send it again; use Restart if it
+  keeps happening. A turn that goes quiet after it has started is not stopped
+  (a build can take a while); the log notes it after 30 seconds.
 - **"The Kiro engine didn't answer … within …s"**: the engine hung while
   starting. Use **Restart** (or `/restart` in a terminal chat); the log shows
   the engine's last messages.

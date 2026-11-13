@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
+import { cleanAnswer, MAX_ANSWER, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
 test("sanitizeImages keeps only well-formed images within limits", () => {
   const ok = { mimeType: "image/png", data: "iVBORw0KGgo=", name: "a.png" };
@@ -17,4 +17,12 @@ test("sanitizeImages keeps only well-formed images within limits", () => {
   );
   assert.equal(sanitizeImages(Array(MAX_IMAGES + 3).fill(ok)).length, MAX_IMAGES);
   assert.equal(sanitizeImages([{ ...ok, name: "n".repeat(500) }])[0].name?.length, 200);
+});
+
+test("cleanAnswer trims, caps and treats nothing as a skipped question", () => {
+  assert.equal(cleanAnswer("  blue "), "blue");
+  assert.equal(cleanAnswer("x".repeat(MAX_ANSWER + 5))?.length, MAX_ANSWER);
+  for (const v of [undefined, null, "", "   ", 5, {}]) {
+    assert.equal(cleanAnswer(v), undefined);
+  }
 });
