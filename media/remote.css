@@ -1,4 +1,159 @@
-/* Extras for the chat page when it runs in a browser (remote access). */
+/* Extras for the chat page when it runs in a browser (remote access).
+   Inside VS Code the theme supplies the --vscode-* colours; a browser has
+   none, so they are defined here (dark by default, light when the device asks). */
+
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --vscode-editor-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --vscode-font-size: 15px;
+  --vscode-foreground: #cccccc;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-sideBar-background: #181818;
+  --vscode-panel-border: #3c3c3c;
+  --vscode-focusBorder: #0078d4;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.6);
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-border: transparent;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-button-secondaryHoverBackground: #3c3c3c;
+  --vscode-editorWidget-background: #202020;
+  --vscode-editorWidget-border: #454545;
+  --vscode-editorHoverWidget-background: #202020;
+  --vscode-editorHoverWidget-foreground: #cccccc;
+  --vscode-editorHoverWidget-border: #454545;
+  --vscode-input-background: #313131;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-dropdown-background: #313131;
+  --vscode-dropdown-foreground: #cccccc;
+  --vscode-dropdown-border: #3c3c3c;
+  --vscode-toolbar-hoverBackground: rgba(90, 93, 94, 0.31);
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-list-activeSelectionBackground: #04395e;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-textBlockQuote-background: #2b2b2b;
+  --vscode-textLink-foreground: #4daafc;
+  --vscode-errorForeground: #f85149;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-inputValidation-errorBackground: #5a1d1d;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-gitDecoration-addedResourceForeground: #81b88b;
+  --vscode-gitDecoration-deletedResourceForeground: #c74e39;
+  --vscode-terminal-ansiRed: #f14c4c;
+  --vscode-terminal-ansiGreen: #23d18b;
+  --vscode-terminal-ansiYellow: #f5f543;
+  --vscode-terminal-ansiMagenta: #d670d6;
+  --vscode-debugTokenExpression-string: #ce9178;
+  --vscode-debugTokenExpression-number: #b5cea8;
+  --vscode-debugTokenExpression-name: #c586c0;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --vscode-foreground: #3b3b3b;
+    --vscode-editor-background: #ffffff;
+    --vscode-sideBar-background: #f8f8f8;
+    --vscode-panel-border: #d4d4d4;
+    --vscode-focusBorder: #005fb8;
+    --vscode-widget-shadow: rgba(0, 0, 0, 0.2);
+    --vscode-button-background: #005fb8;
+    --vscode-button-hoverBackground: #0258a8;
+    --vscode-button-secondaryBackground: #e5e5e5;
+    --vscode-button-secondaryForeground: #3b3b3b;
+    --vscode-button-secondaryHoverBackground: #cccccc;
+    --vscode-editorWidget-background: #f8f8f8;
+    --vscode-editorWidget-border: #c8c8c8;
+    --vscode-editorHoverWidget-background: #f8f8f8;
+    --vscode-editorHoverWidget-foreground: #3b3b3b;
+    --vscode-editorHoverWidget-border: #c8c8c8;
+    --vscode-input-background: #ffffff;
+    --vscode-input-foreground: #3b3b3b;
+    --vscode-input-border: #cecece;
+    --vscode-dropdown-background: #ffffff;
+    --vscode-dropdown-foreground: #3b3b3b;
+    --vscode-dropdown-border: #cecece;
+    --vscode-toolbar-hoverBackground: rgba(184, 184, 184, 0.31);
+    --vscode-list-hoverBackground: #f2f2f2;
+    --vscode-list-activeSelectionBackground: #e8e8e8;
+    --vscode-list-activeSelectionForeground: #000000;
+    --vscode-textCodeBlock-background: #f0f0f0;
+    --vscode-textBlockQuote-background: #f0f0f0;
+    --vscode-textLink-foreground: #005fb8;
+    --vscode-errorForeground: #f85149;
+    --vscode-editorWarning-foreground: #bf8803;
+    --vscode-inputValidation-errorBackground: #f2dede;
+    --vscode-editorLineNumber-foreground: #6e7681;
+    --vscode-gitDecoration-addedResourceForeground: #587c0c;
+    --vscode-gitDecoration-deletedResourceForeground: #ad0707;
+    --vscode-terminal-ansiRed: #cd3131;
+    --vscode-terminal-ansiGreen: #107c10;
+    --vscode-terminal-ansiYellow: #949800;
+    --vscode-terminal-ansiMagenta: #bc05bc;
+    --vscode-debugTokenExpression-string: #a31515;
+    --vscode-debugTokenExpression-number: #098658;
+    --vscode-debugTokenExpression-name: #af00db;
+  }
+}
+
+/* Fit the screen: the visible height (the keyboard shrinks it), the notch and the home bar. */
+html {
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+#app {
+  box-sizing: border-box;
+  height: 100vh;
+  height: var(--app-height, 100dvh);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.toolbar-model {
+  min-width: 0;
+  max-width: 32vw;
+}
+
+#toolbar #status {
+  min-width: 0;
+}
+
+/* What only works at the desktop: not offered here (the server refuses it too). */
+.remote-page #btn-resume,
+.remote-page #btn-restart,
+.remote-page #btn-new-tab,
+.remote-page .settings-desktop {
+  display: none !important;
+}
+
+/* A finger needs bigger targets, and a 16px text box so iOS does not zoom in. */
+@media (pointer: coarse) {
+  #toolbar button,
+  #composer button,
+  .approval-btn,
+  .remote-gate button,
+  .settings-remote button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  #toolbar select,
+  .settings-row select {
+    min-height: 44px;
+  }
+
+  #input {
+    font-size: 16px;
+  }
+
+  .settings-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+}
 
 .remote-gate {
   position: fixed;

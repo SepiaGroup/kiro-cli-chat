@@ -17,6 +17,8 @@ export interface WebviewHtmlOptions {
   manifestUri?: string;
   preScriptUris?: string[];
   extraStyleUris?: string[];
+  /** For the remote page: more <head> markup (theme colour, home screen icon). Fixed text, never user input. */
+  headExtra?: string;
 }
 
 /** A random nonce for the script tag. */
@@ -52,8 +54,8 @@ export function webviewHtml(opts: WebviewHtmlOptions): string {
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-${manifest}${styles}
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+${opts.headExtra ?? ""}${manifest}${styles}
 <title>Kiro CLI Chat</title>
 </head>
 <body>
@@ -96,21 +98,21 @@ ${manifest}${styles}
     <label for="sel-effort">Effort</label>
     <select id="sel-effort"></select>
   </div>
-  <div class="settings-row">
+  <div class="settings-row settings-desktop">
     <label for="chk-autopilot">Autopilot</label>
     <input type="checkbox" id="chk-autopilot" />
   </div>
-  <div class="settings-note">Autopilot auto-approves tool actions. Off = Supervised (approve each change).</div>
-  <div class="settings-row">
+  <div class="settings-note settings-desktop">Autopilot auto-approves tool actions. Off = Supervised (approve each change).</div>
+  <div class="settings-row settings-desktop">
     <label for="sel-memory">Memory reflection</label>
     <select id="sel-memory"></select>
   </div>
-  <div class="settings-note">Lets the session learn and store new long-term memories.</div>
-  <div class="settings-row">
+  <div class="settings-note settings-desktop">Lets the session learn and store new long-term memories.</div>
+  <div class="settings-row settings-desktop">
     <label for="sel-content">Content collection</label>
     <select id="sel-content"></select>
   </div>
-  <div class="settings-note">Whether your content may be used for service improvement.</div>
+  <div class="settings-note settings-desktop">Whether your content may be used for service improvement.</div>
   <div class="settings-row settings-remote">
     <label for="chk-remote">Remote access</label>
     <input type="checkbox" id="chk-remote" />

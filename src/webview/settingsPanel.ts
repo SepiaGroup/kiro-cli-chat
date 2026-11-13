@@ -151,4 +151,12 @@ export function updateSettings(options: ConfigOptionLike[]): void {
   if (sawModel && !sawEffort) {
     effortRow.classList.add("hidden");
   }
+  // A remote page has nothing else to set: no ⚙ button rather than an empty panel.
+  if (document.body.classList.contains("remote-page")) {
+    const empty = effortRow.classList.contains("hidden");
+    byId("btn-settings").classList.toggle("hidden", empty);
+    if (empty) {
+      hideSettingsPanel();
+    }
+  }
 }

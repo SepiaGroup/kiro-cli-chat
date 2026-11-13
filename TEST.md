@@ -101,6 +101,7 @@ Then run **Developer: Reload Window**.
 - [ ] A question from the agent can be answered from the browser.
 - [ ] Reload the browser tab mid-reply: the conversation comes back and keeps streaming, nothing twice. Reopen the same link: it says the link is no longer valid. **Show Remote Access Link** gives a new one; the already paired browser needs no link.
 - [ ] **Remove Remote Device…**: the browser shows "This device was removed" and cannot reconnect. **Stop Remote Access**: the page shows it cannot reach VS Code.
+- [ ] Narrow the browser window to phone width (or use the browser's device mode): the toolbar stays on one row, the page uses the browser's light or dark setting, the approval card shows only Allow, Deny and Deny with reason, Resume, Restart and ＋ are gone, and Settings shows no Autopilot, Memory, Content or Remote rows (only Effort, and the ⚙ button is gone when the engine has no effort setting). With touch emulation, Enter adds a line.
 - [ ] Close a chat tab in VS Code: a browser showing it is told it was closed and offers the other chats.
 - [ ] Untrusted workspace: Start Remote Access refuses with a message.
 - [ ] Restart VS Code: remote access is off unless `kiroCliChat.remote.autoStart` is on; paired devices are still paired.

@@ -10,7 +10,6 @@ eslint.config.mjs
 docs/**
 **/*.map
 **/*.ts
-media/icon@2x.png
 CONTRIBUTING.md
 TEST.md
 .github/**

@@ -90,11 +90,13 @@ export function renderApproval(req: ApprovalRequest): void {
     const deny = opt("reject_once");
     const allowRule = opt("allow_always");
     const denyRule = opt("reject_always");
+    // A remote device can only allow or deny once (the server refuses rules), so it is not offered them.
+    const rulesOffered = !document.body.classList.contains("remote-page");
     // Allow choices first, then deny choices.
     if (allow) {
       row.appendChild(button(allow.name || "Allow", "allow", () => send({ optionId: allow.optionId })));
     }
-    if (allowRule) {
+    if (allowRule && rulesOffered) {
       row.appendChild(
         button(allowRule.name, "allow", () =>
           req.allowRules?.length ? rulePage("allow", allowRule, req.allowRules) : send({ optionId: allowRule.optionId })
@@ -105,7 +107,7 @@ export function renderApproval(req: ApprovalRequest): void {
       row.appendChild(button(deny.name || "Deny", "deny", () => send({ optionId: deny.optionId })));
       row.appendChild(button("Deny with reason…", "deny", () => reasonPage(deny)));
     }
-    if (denyRule) {
+    if (denyRule && rulesOffered) {
       row.appendChild(
         button(denyRule.name, "deny", () =>
           req.denyRules?.length ? rulePage("deny", denyRule, req.denyRules) : send({ optionId: denyRule.optionId })

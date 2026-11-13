@@ -139,6 +139,7 @@ keeps running here. Plan and decisions: `docs/REMOTE-CONTROL.md`.
   `subscribe()` as a ready remote target, `send()` for a checked message).
   `UiTargets` keeps the desktop webview and the remote listener apart: the
   desktop gets messages at once, a remote listener is always ready.
+- Phone layout (`media/remote.css`): the `--vscode-*` colours are defined there (dark, and light by `prefers-color-scheme`) because a browser has no theme; the shim adds `remote-page` to `<body>`, which hides what a remote device cannot do (Resume, Restart, ＋, Autopilot, memory, content, remote switch, rule buttons on approvals). On touch screens Enter adds a line (the shim sets `enterToSend` false in `ready`). The page height follows `visualViewport` (iOS keyboard), with safe-area padding.
 - Streams: `GET /api/chats/:id/events`. A new stream gets a `snapshot` marker
   event (the page clears itself), the transcript, then a `sync` event whose id
   is where live messages continue. A reconnect sends `Last-Event-ID` and gets
