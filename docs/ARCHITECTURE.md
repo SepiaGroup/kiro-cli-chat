@@ -81,7 +81,7 @@ module.
 7. Closing a tab disposes its session and kills its engine. The conversation
    stays on disk and appears under Resume.
 
-The webview's messages are handled in `ChatSession.handleMessage` (the
+The webview's messages are handled in `ChatSession.onMessage` (the
 `switch` on `msg.type`) and `webview/main.ts` (the `message` listener); those
 are the source of truth for the message names.
 

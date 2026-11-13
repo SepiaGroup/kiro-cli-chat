@@ -37,4 +37,6 @@ AVX.
 5. Publish: `npx vsce publish` (needs a Marketplace token for the
    `SepiaGroup` publisher), or upload the `.vsix` in the Marketplace portal.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is laid out.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is laid out
+and [AGENTS.md](AGENTS.md) for the design rules and conventions (written for
+AI coding agents, but they apply to everyone).
