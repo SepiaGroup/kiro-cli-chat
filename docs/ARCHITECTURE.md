@@ -55,6 +55,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ editorContext.ts  open/active editor files as a prompt context item (paths only, off by default)
 ├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
+├─ uiTargets.ts      the screens one chat shows on (desktop webview, remote browsers): who gets what, when
 ├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn

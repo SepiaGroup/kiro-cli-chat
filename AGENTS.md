@@ -18,7 +18,7 @@ steps are in [CONTRIBUTING.md](CONTRIBUTING.md), manual checks in
   `editorContext.ts`, `errorAdvice.ts`, `detect.ts`, `cli.ts`, `enginePrep.ts`,
   `types.ts`.
 - Webview chat (editor tabs + panel view): `chatViewProvider.ts`,
-  `chatSession.ts` (extension side) and `webview/*.ts` (browser side, bundled
+  `chatSession.ts` (extension side, with `uiTargets.ts` for its screens) and `webview/*.ts` (browser side, bundled
   to `media/webview.js`, styled by `media/webview.css`).
 - Terminal chat (text mode, a Pseudoterminal): `terminal/*.ts`.
 - Only `extension.ts`, `config.ts` (settings and editor state), `chatViewProvider.ts`, `chatSession.ts`,
