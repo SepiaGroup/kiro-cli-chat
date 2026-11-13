@@ -145,6 +145,7 @@ a copied image, to attach them.
 | `kiroCliChat.autopilot` | `false` | Off = Supervised (approve each change). On = tools run without asking. |
 | `kiroCliChat.enterToSend` | `true` | Enter sends, Shift+Enter adds a line. Off reverses them. |
 | `kiroCliChat.defaultEngine` | `auto` | `auto` checks that the engine runs on this machine (once, then remembered) or `v3`. |
+| `kiroCliChat.shareEditorContext` | `false` | Tell the agent which files are open in the editor and which is active (paths only, files inside the chat's folder only). Sent with a prompt when it changed; the chat says so. Ignored in an untrusted workspace. |
 | `kiroCliChat.interactionMode` | `persistent` | `persistent` (ACP) is required for everything above. `one-shot` is a basic fallback with no approvals. |
 
 ## Troubleshooting

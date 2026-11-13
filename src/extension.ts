@@ -2,6 +2,7 @@
 
 import * as vscode from "vscode";
 import { ChatViewProvider } from "./chatViewProvider";
+import { trackActiveEditor } from "./config";
 import { TerminalChat } from "./terminal/terminalChat";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -9,6 +10,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // makes field diagnostics (e.g. drag-and-drop) readable after the fact.
   const output = vscode.window.createOutputChannel("Kiro CLI Chat", { log: true });
   context.subscriptions.push(output);
+  trackActiveEditor(context);
 
   const provider = new ChatViewProvider(context, output);
   context.subscriptions.push(

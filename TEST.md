@@ -93,6 +93,11 @@ Then run **Developer: Reload Window**.
 - [ ] A question left open and then cancelled (Esc, Stop) disappears from the chat. After a window reload an unanswered question card comes back.
 - [ ] `what is in @file:README.md?` → the agent knows the contents; the chat and a Resumed session show `@file:README.md`, not the file's text. `@file:missing.txt` stays as typed. A line in the chat says "Attached: …" and "Not attached: … (reason)". A file over 256 KB or a binary file isn't attached.
 
+### Editor context
+- [ ] With `kiroCliChat.shareEditorContext` off (default), asking "which file is open?" gets no VS Code files.
+- [ ] Turn it on, open two files, click into the chat tab and ask "which file is active and which are open?". A line "Sent editor context: active …, 2 open files." appears and the answer names them. Ask again unchanged: no new line. Switch file and ask: a new line.
+- [ ] The same in a terminal chat. Files outside the chat's folder are never listed.
+
 ### Commands (Command Palette)
 - [ ] **Restart Engine** and the Restart button ask first; Cancel does nothing.
 - [ ] **New Session** asks first, then clears the chat with a new session.

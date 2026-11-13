@@ -20,7 +20,7 @@ steps are in [CONTRIBUTING.md](CONTRIBUTING.md), manual checks in
   `chatSession.ts` (extension side) and `webview/*.ts` (browser side, bundled
   to `media/webview.js`, styled by `media/webview.css`).
 - Terminal chat (text mode, a Pseudoterminal): `terminal/*.ts`.
-- Only `extension.ts`, `config.ts`, `chatViewProvider.ts`, `chatSession.ts`,
+- Only `extension.ts`, `config.ts` (settings and editor state), `chatViewProvider.ts`, `chatSession.ts`,
   `terminal/terminalChat.ts` and `terminal/terminalCommands.ts` import
   `vscode`. Everything else is pure so `node --test` can test it. Keep it so:
   put new logic in a pure module and test it there.

@@ -52,6 +52,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals (+ consent rules), ext methods
 ├─ approvalRules.ts  approval rule choices + folder checks (shared with the webview)
 ├─ questions.ts      the agent's questions: parse `_kiro/userInput`, build the answer text
+├─ editorContext.ts  open/active editor files as a prompt context item (paths only, off by default)
 ├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
@@ -207,6 +208,15 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   display text. `@file:path` is expanded by the client, as the TUI does:
   `<attached_file path="…"> text </attached_file>`; the display text keeps
   what was typed. Verified live.
+- Context items: a `resource` block with `text` in `session/prompt` reaches the
+  model as a `## <uri>` section of the user message, and a resumed session
+  still shows only the typed text. We use it for the editor's open and active
+  files (`editorContext.ts`), sent when they change. The engine's own
+  `_kiro/workspace/active_file` and `currently_open_files` requests are only
+  made for `#[[currentlyOpenFiles:active|all]]` mentions in custom-agent
+  prompts and steering documents, never for a chat prompt (verified live: they
+  are not expanded in user text), so we don't answer them. Its own environment
+  note says no files are open, hence the sentence in our text.
 - Watchdog (as in the TUI): no `session/update` or server request within 10
   minutes of the prompt → `session/cancel` and an error. After the first
   event there is no limit; a quiet turn is logged after 30 s.
