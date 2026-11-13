@@ -136,25 +136,44 @@ a copied image, to attach them.
 
 ## Remote access (preview)
 
-Watch and use a chat tab from another browser while it keeps running here.
-This version serves the chat on this Mac only (`http://127.0.0.1`), so you can
-try it in a browser on the same machine; reaching it from a phone over
-Tailscale comes in a later version.
+Watch and use a chat tab from your phone (or any browser on your tailnet)
+while it keeps running on this Mac. The traffic goes over [Tailscale](https://tailscale.com),
+so only your own devices can reach it, and nothing is hosted anywhere else.
+
+One-time setup:
+
+1. Install Tailscale on the Mac and the phone and log in to the same tailnet.
+2. In the Tailscale admin console, turn on **HTTPS Certificates** (DNS page).
+   The first time you start remote access, Tailscale may also give a link to
+   switch on Serve; the extension shows it with an **Open Tailscale Setup**
+   button.
+
+Then:
 
 1. Tick **Remote access** in ⚙ Settings, or run **Kiro CLI Chat: Start Remote
    Access**. A **Remote** item appears in the status bar.
-2. Choose **Copy Link** or **Open in Browser**. The pairing link works once, for
-   10 minutes, and the page removes the secret from the address bar.
+2. Choose **Copy Link** (send it to the phone, for example with AirDrop or
+   Messages) or **Open in Browser**. The pairing link works once, for 10
+   minutes, and the page removes the secret from the address bar.
 3. Pick a chat. You see the conversation as it is here, and can send prompts,
    steer, stop a reply, answer questions and **Allow** or **Deny** a command once.
    Both screens stay in step: answer an approval on one and it goes away on the
    other, with a line saying who answered.
 
+The address looks like `https://<your-mac>.<tailnet>.ts.net:8443/`. Next time,
+open it (or the home screen icon) with Tailscale on: no new link. If Tailscale
+is missing or not ready, remote access still starts for this Mac only
+(`http://127.0.0.1`) and says what to fix.
+
 A paired device stays paired until you remove it (**Remove Remote Device…**).
-Remote access is off by default and when VS Code closes. From a remote device
-you cannot create allow or deny rules, turn Autopilot on, restart the engine,
-log in or open tabs. The page fits a phone (light or dark by the device's setting, large buttons, Enter adds a line and the Send button sends) and can be added to the home screen. Terminal chats are not shown. The settings below are
-machine settings, so a workspace cannot turn remote access on.
+Remote access is off by default and when VS Code closes (the extension takes its
+Tailscale share down; nothing else of yours in `tailscale serve` is touched).
+From a remote device you cannot create allow or deny rules, turn Autopilot on,
+restart the engine, log in or open tabs. The page fits a phone (light or dark
+by the device's setting, large buttons, Enter adds a line and the Send button
+sends) and can be added to the home screen. Terminal chats are not shown. The
+settings below are machine settings, so a workspace cannot turn remote access
+on.
 
 ## Commands
 
@@ -188,6 +207,7 @@ machine settings, so a workspace cannot turn remote access on.
 | `kiroCliChat.shareEditorContext` | `false` | Tell the agent which files are open in the editor and which is active (paths only, files inside the chat's folder only). Sent with a prompt when it changed; the chat says so. Ignored in an untrusted workspace. |
 | `kiroCliChat.remote.autoStart` | `false` | Start remote access when VS Code starts. Machine setting. |
 | `kiroCliChat.remote.permissions` | `view`, `prompt`, `approve` | What a paired device may do: `view` chats, `prompt` (send, steer, stop, answer questions), `approve` (allow or deny once). Machine setting. |
+| `kiroCliChat.remote.httpsPort` | `8443` | The HTTPS port Tailscale uses (443, 8443 or 10000). 8443 leaves 443 to anything you already serve. Machine setting. |
 | `kiroCliChat.remote.port` | `0` | Local port for remote access (listens on 127.0.0.1 only). 0 reuses the port of last time when it is free, otherwise picks a free one, so an open page reconnects after a restart. Machine setting. |
 | `kiroCliChat.interactionMode` | `persistent` | `persistent` (ACP) is required for everything above. `one-shot` is a basic fallback with no approvals. |
 

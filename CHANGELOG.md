@@ -11,8 +11,8 @@ First release.
 - The agent's questions (Spec mode) as a card or numbered choices, with your
   own answer or Skip. `@file:path` in a prompt attaches the file. A prompt the
   engine never answers is cancelled after 10 minutes.
-- Remote access (preview): watch and use a chat tab from another browser,
-  paired once with a link, on this Mac for now. Approvals can be allowed or
+- Remote access (preview): watch and use a chat tab from your phone or another
+  browser over Tailscale (HTTPS, your tailnet only), paired once with a link. Approvals can be allowed or
   denied once from the other screen; no rules, Autopilot or restart.
   The page fits a phone: it follows the device's light or dark setting, has
   large touch targets, system fonts, handles the keyboard and the notch, and can be added to

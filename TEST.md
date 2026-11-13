@@ -92,7 +92,16 @@ Then run **Developer: Reload Window**.
 - [ ] Turn the network off, send a prompt: the message says it is a network error and what to try.
 - [ ] Rate limit (only when it happens): a red line with the engine's message; the reply still finishes.
 
-### Remote access (localhost preview)
+### Remote access (Tailscale)
+- [ ] Tailscale off (menu bar item: Disconnect), then Start Remote Access: the notice says Tailscale is turned off and the link is for this Mac only; the page still works on this Mac. Turn Tailscale on and run **Start Remote Access** again: no restart needed, the link becomes `https://<mac>.ts.net:8443/#k=…`.
+- [ ] Before HTTPS certificates and Serve are enabled: the notice has **Open Tailscale Setup**, which opens Tailscale's page. After enabling, Start Remote Access again works.
+- [ ] **Phone on Wi-Fi**: send yourself the link, open it in Safari or Chrome: the chat appears, Allow from the phone works, a prompt typed on the phone shows in VS Code.
+- [ ] **Phone on cellular** with the Tailscale app on: same. With Tailscale off on the phone the address does not load.
+- [ ] Lock the phone for a few minutes, unlock: the page says Reconnecting, then catches up, nothing twice.
+- [ ] Add to Home Screen, open from the icon: it opens full screen, still paired, light/dark follows the phone.
+- [ ] Stop Remote Access, then in Terminal `tailscale serve status` shows no entry for port 8443 (other serves you have are untouched).
+
+### Remote access (localhost)
 - [ ] Open ⚙ Settings in a chat: the panel has a clear border and shadow, and the Resume panel too. At the bottom, **Remote access** is unchecked. Tick it: remote access starts and the pairing link notice appears; the checkbox stays ticked and **Show pairing link** shows. Untick it: remote access stops. Starting it from the status bar menu or the command ticks the box in every open chat. The browser page's Settings has no Remote access row.
 - [ ] Run **Kiro CLI Chat: Start Remote Access**. The status bar shows **Remote**. Choose **Open in Browser**: the page opens in your browser, the address bar loses the `#k=...` part, and the chat shows the same conversation as the VS Code tab. With two chats open, a picker lists both (and remembers the last one next time).
 - [ ] Send a prompt from the browser: it appears in the VS Code chat too, and the reply streams in both. Stop works from the browser.

@@ -63,6 +63,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │    ├─ remoteServer.ts  loopback HTTP server: page, pairing, SSE streams, messages
 │    ├─ remotePage.ts    the HTML and security headers
 │    ├─ assets.ts        the fixed list of files served from media/
+│    ├─ tailscale.ts     find the CLI, read status, `tailscale serve` on/off, the tailnet address (command runner injected)
 │    └─ remoteController.ts  (vscode) start/stop, status bar, pairing link, devices, settings
 ├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
@@ -157,6 +158,7 @@ keeps running here. Plan and decisions: `docs/REMOTE-CONTROL.md`.
 - Whoever answers an approval, `ChatSession` posts `approvalResolved` with a
   label ("Allowed from <device>" or "on the desktop"), so the other screens
   drop their card and say who answered. Questions already did this.
+- Tailscale: after the server listens, `TailscaleServe.expose` runs `tailscale serve --bg --https=8443 http://127.0.0.1:PORT` (8443 so 443 stays free for the user's own serves; Tailscale allows 443, 8443, 10000) and the link is `https://<dns-name>:8443/#k=…`. `serve status --json` is read first, and a port used by anything but a single loopback proxy is refused. Stop runs `serve --https=8443 off`, only if this extension set it up; after a crash the stale mapping points at a dead port and is overwritten at the next start. `allowedHosts` is the tailnet name only (plus loopback). If Serve is not enabled on the tailnet, the command prints an enable URL and waits, so it runs with a timeout and the URL is shown as a button. Without Tailscale the server still runs for this Mac.
 - The settings (`kiroCliChat.remote.*`) have machine scope, so a workspace
   cannot turn remote access on; it also refuses to start in an untrusted
   workspace.
