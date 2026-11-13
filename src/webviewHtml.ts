@@ -11,6 +11,12 @@ export interface WebviewHtmlOptions {
   cspSource: string;
   /** Script nonce; a fresh random one by default. */
   nonce?: string;
+  /** For the remote page (a plain browser): allow fetch/EventSource to this source. */
+  connectSrc?: string;
+  /** For the remote page: a web app manifest, and extra scripts and styles around the chat's own. */
+  manifestUri?: string;
+  preScriptUris?: string[];
+  extraStyleUris?: string[];
 }
 
 /** A random nonce for the script tag. */
@@ -30,7 +36,16 @@ export function webviewHtml(opts: WebviewHtmlOptions): string {
     `img-src ${cspSource} data:`,
     `style-src ${cspSource}`,
     `script-src 'nonce-${nonce}'`,
+    ...(opts.connectSrc ? [`connect-src ${opts.connectSrc}`] : []),
+    ...(opts.manifestUri ? [`manifest-src ${cspSource}`] : []),
   ].join("; ");
+  const styles = [styleUri, ...(opts.extraStyleUris ?? [])]
+    .map((u) => `<link href="${u}" rel="stylesheet" />`)
+    .join("\n");
+  const manifest = opts.manifestUri ? `<link rel="manifest" href="${opts.manifestUri}" />\n` : "";
+  const preScripts = (opts.preScriptUris ?? [])
+    .map((u) => `<script nonce="${nonce}" src="${u}"></script>\n`)
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -38,7 +53,7 @@ export function webviewHtml(opts: WebviewHtmlOptions): string {
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link href="${styleUri}" rel="stylesheet" />
+${manifest}${styles}
 <title>Kiro CLI Chat</title>
 </head>
 <body>
@@ -111,7 +126,7 @@ export function webviewHtml(opts: WebviewHtmlOptions): string {
   </button>
 </div>
 </div>
-<script nonce="${nonce}" src="${scriptUri}"></script>
+${preScripts}<script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

@@ -56,6 +56,12 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
 ├─ uiTargets.ts      the screens one chat shows on (desktop webview, remote browsers): who gets what, when
+├─ remote/           remote access (not wired into the extension yet): the pure parts
+│    ├─ remoteAuth.ts    pairing code, device records (hashes only), cookies, rate limit
+│    ├─ remotePolicy.ts  allow-list of what a remote device may send, and the shape it gets through in
+│    ├─ eventLog.ts      numbered, bounded log of a chat's messages (catch-up after a dropped connection)
+│    ├─ remoteServer.ts  loopback HTTP server: page, pairing, SSE streams, messages
+│    └─ remotePage.ts    the HTML and security headers
 ├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn

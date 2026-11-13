@@ -32,3 +32,27 @@ test("nonces are random and safe in an attribute", () => {
   assert.notEqual(a, makeNonce());
   assert.match(a, /^[A-Za-z0-9_-]{24}$/);
 });
+
+test("the remote page's CSP adds only same-origin fetches and the manifest, and loads the shim first", () => {
+  const remote = webviewHtml({
+    scriptUri: "/static/webview.js",
+    styleUri: "/static/webview.css",
+    cspSource: "'self'",
+    nonce: "N",
+    connectSrc: "'self'",
+    manifestUri: "/static/manifest.webmanifest",
+    preScriptUris: ["/static/remoteShim.js"],
+    extraStyleUris: ["/static/remote.css"],
+  });
+  const csp = /Content-Security-Policy" content="([^"]+)"/.exec(remote)?.[1] ?? "";
+  assert.equal(
+    csp,
+    "default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'nonce-N'; connect-src 'self'; manifest-src 'self'"
+  );
+  assert.ok(remote.indexOf("remoteShim.js") < remote.indexOf("webview.js"));
+  assert.match(remote, /<link rel="manifest" href="\/static\/manifest\.webmanifest" \/>/);
+  assert.match(remote, /<link href="\/static\/remote\.css" rel="stylesheet" \/>/);
+  assert.doesNotMatch(remote, /style="/);
+  // The desktop page is unchanged.
+  assert.doesNotMatch(html, /connect-src|manifest/);
+});
