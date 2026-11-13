@@ -55,14 +55,25 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 └─ config.ts         reads kiroCliChat.* settings
 
 webview/ (bundled to media/webview.js, runs inside the webview)
-├─ main.ts       the chat UI: toolbar, messages, tool cards, approvals,
-│                composer, "/" picker, Resume/Settings panels, context card
-├─ markdown.ts   self-contained markdown → HTML (no dependencies)
-└─ lineDiff.ts   LCS line diff for tool-card `+`/`-` rendering
+├─ main.ts           startup, composer, busy/starting state, routes host messages
+├─ ui.ts             shared: VS Code API, state, main elements, DOM helpers, panels
+├─ messages.ts       user prompts and streamed markdown replies
+├─ toolCards.ts      terminal-style tool cards (paths, status, diff, output)
+├─ approvalCard.ts   approval card (choices, rule list, folder, reason)
+├─ attachments.ts    image attachments, drag-and-drop, paste
+├─ dropPaths.ts      pure: paths and image types from a drop (tested)
+├─ commandPicker.ts  "/" picker and argument hint
+├─ contextCard.ts    context meter and its hover card (breakdown, Compact)
+├─ resumePanel.ts    Resume panel
+├─ settingsPanel.ts  ⚙ Settings panel, model and mode dropdowns
+├─ markdown.ts       self-contained markdown → HTML (no dependencies)
+└─ lineDiff.ts       LCS line diff for tool-card `+`/`-` rendering
 media/webview.css  styles (VS Code theme variables only)
 ```
 
 Pure modules (no `vscode` import) are unit-tested with `node --test`.
+`tsconfig.test.json` compiles only the tests and what they import, so the
+webview's DOM modules stay out of the Node test build.
 `chatViewProvider.test.ts` tests the tab manager against a small fake `vscode`
 module.
 
