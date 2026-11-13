@@ -15,7 +15,7 @@ First release.
   paired once with a link, on this Mac for now. Approvals can be allowed or
   denied once from the other screen; no rules, Autopilot or restart.
   The page fits a phone: it follows the device's light or dark setting, has
-  large touch targets, handles the keyboard and the notch, and can be added to
+  large touch targets, system fonts, handles the keyboard and the notch, and can be added to
   the home screen. Switch it on in ⚙ Settings. The Settings and Resume panels now have a
   border and shadow so they stand out from the chat.
 - A Stop button (and Esc) ends a reply in the chat tabs, as Esc does in the

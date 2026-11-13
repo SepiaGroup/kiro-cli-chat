@@ -562,3 +562,19 @@ test("cookies are Secure behind a proxy (HTTPS) but not for plain loopback", asy
     await rig.server.stop();
   }
 });
+
+test("a busy port fails cleanly and the same server can start on another", async () => {
+  const blocker = http.createServer();
+  await new Promise<void>((r) => blocker.listen(0, "127.0.0.1", r));
+  const busy = (blocker.address() as { port: number }).port;
+  const rig = await boot();
+  await rig.server.stop();
+  try {
+    await assert.rejects(rig.server.start(busy), /EADDRINUSE/);
+    const port = await rig.server.start(0);
+    assert.ok(port > 0 && port !== busy);
+  } finally {
+    await rig.server.stop();
+    await new Promise<void>((r) => blocker.close(() => r()));
+  }
+});
