@@ -1,6 +1,6 @@
 # Remote control: implementation plan
 
-Status: plan, no code yet. Transport: Tailscale.
+Status: implemented in steps (see the PR list below). Transport: Tailscale.
 
 ## Goal
 

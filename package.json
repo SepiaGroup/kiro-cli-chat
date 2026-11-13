@@ -233,6 +233,13 @@
           "scope": "machine",
           "markdownDescription": "What a paired remote device may do: `view` the chats, `prompt` (send, steer, stop, answer questions), `approve` (allow or deny a command once)."
         },
+        "kiroCliChat.remote.httpsPort": {
+          "type": "integer",
+          "enum": [443, 8443, 10000],
+          "default": 8443,
+          "scope": "machine",
+          "markdownDescription": "The HTTPS port Tailscale uses for remote access (the address is `https://<this Mac>.ts.net:<port>`). Tailscale only allows these three. 8443 leaves 443 to anything you already serve."
+        },
         "kiroCliChat.remote.port": {
           "type": "integer",
           "default": 0,

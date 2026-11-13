@@ -10,6 +10,7 @@ import { assetType } from "./assets";
 import { DeviceRecord, DeviceStore, PairingCode } from "./remoteAuth";
 import { parsePermissions } from "./remotePolicy";
 import { RemoteAsset, RemoteServer } from "./remoteServer";
+import { DEFAULT_HTTPS_PORT, HTTPS_PORTS, nodeRun, TailscaleServe } from "./tailscale";
 import { errorMessage } from "../format";
 
 const DEVICES_KEY = "kiroCliChat.remoteDevices";
@@ -23,6 +24,11 @@ export class RemoteController implements vscode.Disposable {
   private readonly status: vscode.StatusBarItem;
   private chatSub?: vscode.Disposable;
   private starting?: Promise<void>;
+  private readonly tailscale: TailscaleServe;
+  /** The tailnet address devices open, once Tailscale shares the port. */
+  private publicUrl?: string;
+  /** Why Tailscale could not share it (shown with the link), and where to fix that. */
+  private problem?: { advice: string; enableUrl?: string };
   private readonly stateChanged = new vscode.EventEmitter<void>();
   /** Fires when remote access starts or stops. */
   readonly onDidChange = this.stateChanged.event;
@@ -32,6 +38,7 @@ export class RemoteController implements vscode.Disposable {
     private readonly output: vscode.OutputChannel,
     private readonly provider: ChatViewProvider
   ) {
+    this.tailscale = new TailscaleServe(nodeRun, (line) => this.log(line));
     this.status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     this.status.command = "kiroCliChat.remoteMenu";
   }
@@ -48,14 +55,37 @@ export class RemoteController implements vscode.Disposable {
     return vscode.workspace.getConfiguration("kiroCliChat.remote");
   }
 
-  /** The address devices open. Replaced by the Tailscale name once that is wired in. */
+  /** The address devices open: the tailnet name when Tailscale shares the port, else this Mac only. */
   private baseUrl(): string {
-    return `http://127.0.0.1:${this.port}`;
+    return this.publicUrl ?? `http://127.0.0.1:${this.port}`;
+  }
+
+  /** Put the local port on the tailnet. Sets `publicUrl`, or `problem` with what to do. */
+  private async shareOnTailnet(): Promise<void> {
+    const wanted = this.settings().get<number>("httpsPort", DEFAULT_HTTPS_PORT);
+    const httpsPort = HTTPS_PORTS.includes(wanted) ? wanted : DEFAULT_HTTPS_PORT;
+    const result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Kiro CLI Chat: sharing remote access on your tailnet…" },
+      () => this.tailscale.expose(this.port, httpsPort)
+    );
+    if (result.ok) {
+      this.publicUrl = result.url;
+      this.problem = undefined;
+      this.log(`shared on the tailnet as ${new URL(result.url).host}`);
+    } else {
+      this.publicUrl = undefined;
+      this.problem = { advice: result.advice, enableUrl: result.enableUrl };
+      this.log(`tailscale: ${result.advice}`);
+    }
+    this.updateStatus();
   }
 
   /** Start unless it already runs. `showLink` also offers the pairing link. */
   async start(showLink = true): Promise<void> {
     if (this.server) {
+      if (!this.publicUrl) {
+        await this.shareOnTailnet(); // the user may have fixed what was wrong
+      }
       if (showLink) {
         await this.showLink();
       }
@@ -88,6 +118,8 @@ export class RemoteController implements vscode.Disposable {
       assets: (name) => this.readAsset(name),
       onPaired: (d) => void vscode.window.showInformationMessage(`Remote access: ${d.name} is paired.`),
       onClients: () => this.updateStatus(),
+      // Only this Mac and the tailnet name may be the Host: no other name reaches the page.
+      allowedHosts: () => (this.publicUrl ? [new URL(this.publicUrl).hostname] : []),
       log: (line) => this.log(line),
     });
     try {
@@ -112,6 +144,7 @@ export class RemoteController implements vscode.Disposable {
     this.server = server;
     this.chatSub = this.provider.onDidChangeChats(() => server.chatsChanged());
     this.log(`listening on 127.0.0.1:${this.port}`);
+    await this.shareOnTailnet();
     this.updateStatus();
     this.stateChanged.fire();
   }
@@ -125,6 +158,9 @@ export class RemoteController implements vscode.Disposable {
     this.chatSub?.dispose();
     this.chatSub = undefined;
     this.pairing.revoke();
+    await this.tailscale.remove();
+    this.publicUrl = undefined;
+    this.problem = undefined;
     await server.stop();
     this.status.hide();
     this.stateChanged.fire();
@@ -138,12 +174,14 @@ export class RemoteController implements vscode.Disposable {
       return this.start(true);
     }
     const link = `${this.baseUrl()}/#k=${this.pairing.issue()}`;
-    const choice = await vscode.window.showInformationMessage(
-      "Remote access is on. Open the pairing link on the device you want to use. It works once, for 10 minutes.",
-      "Copy Link",
-      "Open in Browser"
-    );
-    if (choice === "Copy Link") {
+    const setup = this.problem?.enableUrl ? ["Open Tailscale Setup"] : [];
+    const text = this.publicUrl
+      ? "Remote access is on. Open the pairing link on the device you want to use. It works once, for 10 minutes."
+      : `Remote access is on for this Mac only. ${this.problem?.advice ?? ""} The link below works on this Mac.`;
+    const choice = await vscode.window.showInformationMessage(text, "Copy Link", "Open in Browser", ...setup);
+    if (choice === "Open Tailscale Setup" && this.problem?.enableUrl) {
+      await vscode.env.openExternal(vscode.Uri.parse(this.problem.enableUrl));
+    } else if (choice === "Copy Link") {
       await vscode.env.clipboard.writeText(link);
     } else if (choice === "Open in Browser") {
       await vscode.env.openExternal(vscode.Uri.parse(link));
@@ -209,6 +247,7 @@ export class RemoteController implements vscode.Disposable {
 
   dispose(): void {
     this.chatSub?.dispose();
+    void this.tailscale.remove();
     void this.server?.stop();
     this.server = undefined;
     this.status.dispose();
@@ -220,7 +259,9 @@ export class RemoteController implements vscode.Disposable {
   private updateStatus(): void {
     const n = this.server?.connectedDevices.length ?? 0;
     this.status.text = n > 0 ? `$(broadcast) Remote: ${n} connected` : "$(broadcast) Remote";
-    this.status.tooltip = "Kiro CLI Chat remote access is on. Click for the pairing link, devices and Stop.";
+    this.status.tooltip = this.publicUrl
+      ? `Kiro CLI Chat remote access is on at ${this.publicUrl}. Click for the pairing link, devices and Stop.`
+      : "Kiro CLI Chat remote access is on for this Mac only (Tailscale is not set up). Click for details, devices and Stop.";
     this.status.show();
   }
 
