@@ -342,3 +342,118 @@ test("open editor files go in as a context item, only when they changed", async 
     c.dispose();
   }
 });
+
+// A turn that stays open until a steer says what to do next:
+//   "finish" -> the agent reads it and the turn ends
+//   "lose"   -> the engine clears it without the agent reading it
+//   "leave"  -> the turn ends with it still unread
+//   anything else is queued only
+const STEER_ENGINE = `async (msg, send, ask) => {
+  (${BASIC})(msg, send, ask);
+  const g = globalThis;
+  const info = (kind, extra) => send({ method: "session/update", params: { sessionId: "s1", update: { sessionUpdate: "session_info_update", _meta: { kiro: { kind, ...extra } } } } });
+  if (msg.method === "session/prompt") g.promptId = msg.id;
+  if (msg.method === "_session/steer") {
+    const id = "steer-" + msg.params.messageId;
+    send({ id: msg.id, result: { queued: true, messageId: id } });
+    info("steering_queued", { messageId: id, content: msg.params.message });
+    const m = msg.params.message;
+    if (m.includes("finish")) {
+      info("steering_injected", { messageId: id, content: m });
+      info("steering_cleared", { messageIds: [id] });
+      send({ id: g.promptId, result: { stopReason: "end_turn" } });
+    } else if (m.includes("lose")) {
+      info("steering_cleared", { messageIds: [id] });
+    } else if (m.includes("leave")) {
+      send({ id: g.promptId, result: { stopReason: "end_turn" } });
+    }
+  }
+  if (msg.method === "_session/steer/clear") {
+    info("steering_cleared", { messageIds: ["steer-m1"] }); // before the reply, as the real engine does
+    send({ id: msg.id, result: { cleared: true } });
+  }
+}`;
+
+const steers = (events: ChatEvent[]): string[] =>
+  events.flatMap((e) => (e.kind === "steer" ? [`${e.state}:${e.messageIds.join(",")}`] : []));
+
+test("a message sent mid-turn is queued, then read by the agent", async () => {
+  const { c, events } = client(fakeEngine("steer", STEER_ENGINE));
+  try {
+    await c.start();
+    await assert.rejects(c.steer("too early"), /No reply is running/);
+    const turn = c.prompt("work");
+    await eventually("the turn to start", () => c.turnRunning);
+    await c.steer("hello");
+    await eventually("the queued event", () => c.hasQueuedSteers);
+    await c.steer("please finish");
+    await turn;
+    assert.deepEqual(steers(events), ["queued:steer-m1", "queued:steer-m2", "injected:steer-m2", "dropped:steer-m1"]);
+    assert.equal(c.hasQueuedSteers, false);
+    assert.equal(c.turnRunning, false);
+  } finally {
+    c.dispose();
+  }
+});
+
+test("a message the engine clears unread is reported as dropped; one left at turn end too", async () => {
+  const { c, events } = client(fakeEngine("steer-lost", STEER_ENGINE));
+  try {
+    await c.start();
+    const turn = c.prompt("work");
+    await eventually("the turn to start", () => c.turnRunning);
+    await c.steer("lose this");
+    await eventually("the drop", () => steers(events).includes("dropped:steer-m1"));
+    await c.steer("leave this");
+    await turn;
+    assert.deepEqual(steers(events), ["queued:steer-m1", "dropped:steer-m1", "queued:steer-m2", "dropped:steer-m2"]);
+  } finally {
+    c.dispose();
+  }
+});
+
+test("taking back queued messages reports them as removed", async () => {
+  const { c, events } = client(fakeEngine("steer-clear", STEER_ENGINE));
+  try {
+    await c.start();
+    const turn = c.prompt("work");
+    await eventually("the turn to start", () => c.turnRunning);
+    await c.steer("one");
+    await eventually("queued", () => c.hasQueuedSteers);
+    await c.clearSteers();
+    await eventually("removed", () => steers(events).includes("removed:steer-m1"));
+    assert.equal(c.hasQueuedSteers, false);
+    await c.steer("finish now");
+    await turn;
+  } finally {
+    c.dispose();
+  }
+});
+
+test("@file: works in a steering message", async () => {
+  writeFileSync(join(dir, "steer.txt"), "from the file");
+  const cli = fakeEngine(
+    "steer-file",
+    `async (msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "_session/steer") {
+        send({ id: msg.id, result: { queued: true } });
+        (${SAY})(send, msg.params.message);
+        send({ id: globalThis.promptId, result: { stopReason: "end_turn" } });
+      }
+      if (msg.method === "session/prompt") globalThis.promptId = msg.id;
+    }`
+  );
+  const { c, events } = client(cli);
+  try {
+    await c.start();
+    const turn = c.prompt("work");
+    await eventually("the turn to start", () => c.turnRunning);
+    await c.steer("see @file:steer.txt");
+    await turn;
+    assert.deepEqual(chunks(events), ['see <attached_file path="steer.txt"> from the file </attached_file>']);
+    assert.ok(events.some((e) => e.kind === "notice" && e.text === "Attached: steer.txt."));
+  } finally {
+    c.dispose();
+  }
+});

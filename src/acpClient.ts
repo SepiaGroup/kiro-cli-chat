@@ -75,6 +75,11 @@ export class AcpClient extends EventEmitter {
   private pendingQuestions = new Map<RpcId, Question>();
   /** What the model was last told about the editor (so an unchanged editor isn't resent every turn). */
   private lastEditorContext?: string;
+  /** Messages sent while a reply runs that the agent has not read yet (engine message ids). */
+  private queuedSteers = new Set<string>();
+  private steerSeq = 0;
+  private clearingSteers = false;
+  private running = false;
   /** Set while a prompt runs: called for every sign of life from the engine. */
   private onActivity?: () => void;
   private readonly stderrTail: string[] = [];
@@ -233,6 +238,7 @@ export class AcpClient extends EventEmitter {
     let status = "error";
     let stopReason: string | undefined;
     const watchdog = this.startWatchdog();
+    this.running = true;
     try {
       const turn = this.request("session/prompt", { sessionId: this.sessionId, prompt, ...(meta ? { _meta: meta } : {}) });
       turn.catch(() => undefined); // if the watchdog wins, a late failure isn't "unhandled"
@@ -241,8 +247,11 @@ export class AcpClient extends EventEmitter {
       status = stopReason === "cancelled" ? "cancelled" : stopReason === "refusal" ? "error" : "success";
     } finally {
       watchdog.stop();
+      this.running = false;
       // The turn is over, so nobody is waiting for these any more.
       this.dropQuestions(false);
+      // The engine carries unread steering into the turn, so what is left was lost.
+      this.reportUnread("dropped", [...this.queuedSteers]);
       this.emit("event", { kind: "runFinished", status, ...(stopReason ? { stopReason } : {}) } as ChatEvent);
     }
   }
@@ -260,6 +269,72 @@ export class AcpClient extends EventEmitter {
     this.lastEditorContext = text;
     prompt.push({ type: "resource", resource: { uri: "vscode-editor-context", mimeType: "text/plain", text } });
     this.emit("event", { kind: "notice", text: editorContextNotice(snap, this.opts.cwd) } as ChatEvent);
+  }
+
+  /** A reply is running (a message typed now can steer it). */
+  get turnRunning(): boolean {
+    return this.running;
+  }
+
+  /** Some message sent during the reply has not been read by the agent yet. */
+  get hasQueuedSteers(): boolean {
+    return this.queuedSteers.size > 0;
+  }
+
+  /**
+   * Send a message while the agent works. The engine hands it to the agent at
+   * its next step (after a running tool call, not in the middle of one).
+   * `@file:` mentions are attached as in a prompt; images can't be.
+   */
+  async steer(text: string): Promise<void> {
+    if (!this.running) {
+      throw new Error("No reply is running, so there is nothing to steer.");
+    }
+    const mentions = expandFileMentions(text, this.opts.cwd);
+    for (const s of mentions.skipped) {
+      this.emit("log", `@file:${s.path} was not attached (${s.reason})`);
+    }
+    const notice = mentionNotice(mentions);
+    if (notice) {
+      this.emit("event", { kind: "notice", text: notice } as ChatEvent);
+    }
+    const res = await this.extMethod<{ queued?: boolean }>("_session/steer", {
+      message: mentions.text,
+      messageId: `m${++this.steerSeq}`,
+    });
+    if (res.queued === false) {
+      throw new Error("The agent didn't take that message. Send it again.");
+    }
+  }
+
+  /** Take back the messages the agent has not read yet. */
+  async clearSteers(): Promise<void> {
+    this.clearingSteers = true;
+    try {
+      await this.extMethod("_session/steer/clear");
+    } finally {
+      this.clearingSteers = false;
+    }
+  }
+
+  private onSteerEvent(ev: Extract<ChatEvent, { kind: "steer" }>): void {
+    if (ev.state === "queued") {
+      ev.messageIds.forEach((id) => this.queuedSteers.add(id));
+      this.emit("event", ev);
+    } else if (ev.state === "injected") {
+      ev.messageIds.forEach((id) => this.queuedSteers.delete(id));
+      this.emit("event", ev);
+    } else if (ev.state === "cleared") {
+      // Ids read earlier were already removed; what is left never reached the agent.
+      this.reportUnread(this.clearingSteers ? "removed" : "dropped", ev.messageIds);
+    }
+  }
+
+  private reportUnread(state: "dropped" | "removed", ids: string[]): void {
+    const lost = ids.filter((id) => this.queuedSteers.delete(id));
+    if (lost.length > 0) {
+      this.emit("event", { kind: "steer", state, messageIds: lost } as ChatEvent);
+    }
   }
 
   /**
@@ -562,6 +637,10 @@ export class AcpClient extends EventEmitter {
       //    pending_interaction notification is a non-answerable duplicate.
       for (const ev of mapSessionUpdate(data)) {
         if (ev.kind === "sessionId" || ev.kind === "approvalRequest") {
+          continue;
+        }
+        if (ev.kind === "steer") {
+          this.onSteerEvent(ev);
           continue;
         }
         this.emit("event", ev);

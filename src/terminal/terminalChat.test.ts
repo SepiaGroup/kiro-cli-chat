@@ -57,6 +57,20 @@ process.stdin.on("data", (c) => {
       update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "GOT " + JSON.stringify(msg.params.prompt[0].text) } });
       send({ id: msg.id, result: { stopReason: "end_turn" } });
     }
+    else if (msg.method === "session/prompt" && msg.params.prompt[0].text.includes("slow job")) {
+      globalThis.pid = msg.id;
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Working on it.\\n" } });
+    }
+    else if (msg.method === "_session/steer") {
+      const info = (kind, extra) => update({ sessionUpdate: "session_info_update", _meta: { kiro: { kind, ...extra } } });
+      const id = "steer-" + msg.params.messageId;
+      send({ id: msg.id, result: { queued: true, messageId: id } });
+      info("steering_queued", { messageId: id, content: msg.params.message });
+      info("steering_injected", { messageId: id, content: msg.params.message });
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "GOT STEER: " + msg.params.message } });
+      info("steering_cleared", { messageIds: [id] });
+      send({ id: globalThis.pid, result: { stopReason: "end_turn" } });
+    }
     else if (msg.method === "session/prompt") {
       update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello **there**.\\n" } });
       update({ sessionUpdate: "tool_call", toolCallId: "tc1", title: "Run find .", status: "pending" });
@@ -176,6 +190,39 @@ test("a question from the agent is answered with the keyboard; @file: is attache
     send("what is in @file:n.txt?");
     await until("echo", () => text().includes("GOT"));
     assert.match(text(), /GOT .*attached_file.*remember the milk/);
+  } finally {
+    chat.close();
+  }
+});
+
+test("a line typed while the agent works is sent to it as a steering message", async () => {
+  const chat = new TerminalChat({ appendLine: () => undefined } as never, "Kiro Chat");
+  let screen = "";
+  chat.onDidWrite((s) => (screen += s));
+  const text = () => stripAnsi(screen).replace(/\r\n/g, "\n");
+  const type = (s: string) => {
+    for (const ch of s) {
+      chat.handleInput(ch);
+    }
+  };
+  chat.open({ columns: 100, rows: 30 });
+  try {
+    await until("ready", () => text().includes("Ready · engine v3"));
+    type("do a slow job\r");
+    await until("working", () => text().includes("Working on it."));
+    // What is typed shows on the status line.
+    type("dra");
+    await until("draft", () => text().includes("Enter sends: dra"));
+    type("\x7f\x7f\x7f");
+    // Commands don't run mid-reply.
+    type("/help\r");
+    await until("refusal", () => text().includes("Commands can't run while the agent works."));
+    type("\x7f\x7f\x7f\x7f\x7f");
+    type("also x\r");
+    await until("steered", () => text().includes("GOT STEER: also x"));
+    assert.match(text(), /↳ queued: the agent reads it at its next step/);
+    assert.match(text(), /↳ the agent has read your message/);
+    await until("end", () => text().includes("Time:"));
   } finally {
     chat.close();
   }

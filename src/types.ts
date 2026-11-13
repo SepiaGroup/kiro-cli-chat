@@ -73,6 +73,12 @@ export type ChatEvent =
   | { kind: "configOptions"; options: ConfigOption[] }
   | { kind: "availableCommands"; commands: AvailableCommand[] }
   | { kind: "runFinished"; status: string; stopReason?: string; finalText?: string }
+  /**
+   * A message sent while the agent works ("steering"). The engine reports
+   * queued, injected (the agent has it) and cleared; the client turns "cleared"
+   * into "dropped" (never delivered) or "removed" (the user took it back).
+   */
+  | { kind: "steer"; state: "queued" | "injected" | "cleared" | "dropped" | "removed"; messageIds: string[] }
   /** A short line for the user that is not part of the conversation (e.g. which files were attached). */
   | { kind: "notice"; text: string }
   | { kind: "error"; message: string };

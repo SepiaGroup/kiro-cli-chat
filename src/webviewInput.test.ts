@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanAnswer, MAX_ANSWER, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
+import { cleanAnswer, cleanSteer, MAX_ANSWER, MAX_STEER, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
 test("sanitizeImages keeps only well-formed images within limits", () => {
   const ok = { mimeType: "image/png", data: "iVBORw0KGgo=", name: "a.png" };
@@ -24,5 +24,13 @@ test("cleanAnswer trims, caps and treats nothing as a skipped question", () => {
   assert.equal(cleanAnswer("x".repeat(MAX_ANSWER + 5))?.length, MAX_ANSWER);
   for (const v of [undefined, null, "", "   ", 5, {}]) {
     assert.equal(cleanAnswer(v), undefined);
+  }
+});
+
+test("cleanSteer trims and caps; empty or non-text means nothing to send", () => {
+  assert.equal(cleanSteer("  also x "), "also x");
+  assert.equal(cleanSteer("y".repeat(MAX_STEER + 9))?.length, MAX_STEER);
+  for (const v of [undefined, "", "  ", 3, {}]) {
+    assert.equal(cleanSteer(v), undefined);
   }
 });

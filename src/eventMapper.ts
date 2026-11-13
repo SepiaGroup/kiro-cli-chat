@@ -175,6 +175,15 @@ function mapSessionInfo(update: Record<string, unknown>): ChatEvent[] {
       out.push({ kind: "contextUsage", usagePercentage: pct, usedTokens, threshold });
     }
   }
+  if (kind === "steering_queued" || kind === "steering_injected") {
+    if (typeof kiro.messageId === "string") {
+      out.push({ kind: "steer", state: kind === "steering_queued" ? "queued" : "injected", messageIds: [kiro.messageId] });
+    }
+  }
+  if (kind === "steering_cleared") {
+    const ids = Array.isArray(kiro.messageIds) ? kiro.messageIds.filter((x): x is string => typeof x === "string") : [];
+    out.push({ kind: "steer", state: "cleared", messageIds: ids });
+  }
   if (kind === "user_message_id_assigned" && typeof kiro.userMessageId === "string") {
     out.push({ kind: "userMessageId", messageId: kiro.userMessageId });
   }

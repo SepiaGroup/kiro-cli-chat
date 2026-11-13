@@ -6,6 +6,7 @@
 import type { ApprovalRequest, Question } from "../types";
 import { removeApprovalCard, renderApproval } from "./approvalCard";
 import { removeQuestionCard, renderQuestion } from "./questionCard";
+import { showSteer } from "./steerNotes";
 import { clearAttachments, currentAttachments, initDropAndPaste, insertPaths, pushAttachment } from "./attachments";
 import { CommandLike, handlePickerKeydown, hideHint, hidePicker, setCommands, updateHint, updatePicker } from "./commandPicker";
 import {
@@ -32,7 +33,11 @@ const sendBtn = byId("btn-send");
 function send(): void {
   const text = inputEl.value;
   const attachments = currentAttachments();
-  if ((!text.trim() && attachments.length === 0) || state.busy || state.starting) {
+  if ((!text.trim() && attachments.length === 0) || state.starting) {
+    return;
+  }
+  if (state.busy) {
+    steer(text, attachments.length);
     return;
   }
   vscode.postMessage({
@@ -46,6 +51,25 @@ function send(): void {
   hideHint();
   // Sending a prompt dismisses any open Settings / Resume panel.
   hidePanels();
+}
+
+/** Typed while the agent works: it reads the message at its next step. */
+function steer(text: string, attachmentCount: number): void {
+  if (!text.trim()) {
+    return;
+  }
+  if (attachmentCount > 0) {
+    addSystem("Images can't be added while the agent works. Send them after the reply, or remove them.", "error");
+    return;
+  }
+  if (text.trimStart().startsWith("/")) {
+    addSystem("Commands can't run while the agent works. Stop the reply first.", "error");
+    return;
+  }
+  vscode.postMessage({ type: "steerPrompt", text });
+  inputEl.value = "";
+  autoGrow();
+  hideHint();
 }
 
 sendBtn.addEventListener("click", send);
@@ -230,6 +254,9 @@ function handleEvent(ev: ChatEventLike): void {
       break;
     case "notice":
       addSystem(String(ev.text ?? ""), "");
+      break;
+    case "steer":
+      showSteer(String(ev.state ?? ""), Array.isArray(ev.messageIds) ? ev.messageIds.map(String) : []);
       break;
     case "question":
       hideWorking();
