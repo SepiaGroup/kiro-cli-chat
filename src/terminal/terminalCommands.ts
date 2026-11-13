@@ -8,6 +8,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { AcpClient } from "../acpClient";
+import { errorMessage } from "../format";
 import { AvailableCommand, ConfigOption, PromptImage } from "../types";
 import { fitAnsi, sanitize, style, stripAnsi } from "./ansi";
 import { tokenize } from "./slashCommands";
@@ -771,9 +772,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 /** Resolve when no editor tab shows `uri` any more. */
 function waitForTabClose(uri: vscode.Uri): Promise<void> {

@@ -28,8 +28,11 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │    │  - the bottom-panel view (WebviewView), its own ChatSession
 │    │  - "current chat" for commands = last-used tab or view
 │    └─ chatSession.ts  ChatSession: one conversation
-│         - its own engine process (AcpClient), transcript, approvals
-│         - HTML for the webview; handles messages from webview/main.ts
+│         - its own engine process (AcpClient), approvals
+│         - handles messages from webview/main.ts (onMessage)
+│         ├─ chatTranscript.ts  what the chat showed, replayed into a new webview
+│         ├─ webviewHtml.ts     the page and its CSP
+│         └─ webviewInput.ts    validation of what the webview posts
 │
 ├─ terminal/terminalChat.ts  TerminalChat: one text-mode chat per terminal
 │    ├─ terminalCommands.ts  slash-command implementations (TerminalCommands)
@@ -46,6 +49,8 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn
 ├─ detect.ts         whoami, engine list + health check, models, sessions
 ├─ enginePrep.ts     cached cli-path/login/engine detection for terminal chats
+├─ sessionList.ts    which saved sessions Resume offers (both UIs)
+├─ format.ts         small shared formatters (also used by the webview)
 ├─ cli.ts            find kiro-cli, run it, sanitized env
 └─ config.ts         reads kiroCliChat.* settings
 

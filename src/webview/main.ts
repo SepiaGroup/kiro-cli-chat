@@ -3,6 +3,7 @@
 
 import { renderMarkdown } from "./markdown";
 import { diffLines } from "./lineDiff";
+import { formatElapsed } from "../format";
 import { checkFolder, truncate as shorten } from "../approvalRules";
 import type { ApprovalRule, FolderOffer } from "../approvalRules";
 import type { ApprovalAnswer, ApprovalOption as ApprovalOptionLike, ApprovalRequest } from "../types";
@@ -867,9 +868,6 @@ function renderToolDiff(card: Element, diff: DiffLike, startLine?: number): void
   card.insertBefore(box, status);
 }
 
-function formatElapsed(ms: number): string {
-  return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
-}
 
 function setToolStatus(card: Element, id: string, statusRaw: string): void {
   const status = card.querySelector(".tool-status");
