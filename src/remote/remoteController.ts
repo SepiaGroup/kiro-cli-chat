@@ -10,11 +10,15 @@ import { assetType } from "./assets";
 import { DeviceRecord, DeviceStore, PairingCode } from "./remoteAuth";
 import { parsePermissions } from "./remotePolicy";
 import { RemoteAsset, RemoteServer } from "./remoteServer";
+import { cardAction, pairingCardHtml } from "./pairingCard";
+import { encodeQr, qrSvg } from "./qr";
 import { DEFAULT_HTTPS_PORT, HTTPS_PORTS, nodeRun, TailscaleServe } from "./tailscale";
 import { errorMessage } from "../format";
 
 const DEVICES_KEY = "kiroCliChat.remoteDevices";
 const PORT_KEY = "kiroCliChat.remotePort";
+/** How long a pairing link works (see PairingCode). */
+const PAIRING_MINUTES = 10;
 
 export class RemoteController implements vscode.Disposable {
   private server?: RemoteServer;
@@ -29,6 +33,9 @@ export class RemoteController implements vscode.Disposable {
   private publicUrl?: string;
   /** Why Tailscale could not share it (shown with the link), and where to fix that. */
   private problem?: { advice: string; enableUrl?: string };
+  /** The pairing card (one at a time) and the link it shows. */
+  private card?: vscode.WebviewPanel;
+  private cardLink = "";
   private readonly stateChanged = new vscode.EventEmitter<void>();
   /** Fires when remote access starts or stops. */
   readonly onDidChange = this.stateChanged.event;
@@ -116,7 +123,10 @@ export class RemoteController implements vscode.Disposable {
       pairing: this.pairing,
       permissions: () => parsePermissions(this.settings().get("permissions")),
       assets: (name) => this.readAsset(name),
-      onPaired: (d) => void vscode.window.showInformationMessage(`Remote access: ${d.name} is paired.`),
+      onPaired: (d) => {
+        this.card?.dispose(); // its one-use link is used up
+        void vscode.window.showInformationMessage(`Remote access: ${d.name} is paired.`);
+      },
       onClients: () => this.updateStatus(),
       // Only this Mac and the tailnet name may be the Host: no other name reaches the page.
       allowedHosts: () => (this.publicUrl ? [new URL(this.publicUrl).hostname] : []),
@@ -158,6 +168,7 @@ export class RemoteController implements vscode.Disposable {
     this.chatSub?.dispose();
     this.chatSub = undefined;
     this.pairing.revoke();
+    this.card?.dispose();
     await this.tailscale.remove();
     this.publicUrl = undefined;
     this.problem = undefined;
@@ -168,23 +179,65 @@ export class RemoteController implements vscode.Disposable {
     void vscode.window.showInformationMessage("Remote access is off. Paired devices stay paired for next time.");
   }
 
-  /** A new one-use pairing link, offered to copy or open. */
+  /** The pairing card: a new one-use link as a QR code and text, with buttons. */
   async showLink(): Promise<void> {
     if (!this.server) {
       return this.start(true);
     }
-    const link = `${this.baseUrl()}/#k=${this.pairing.issue()}`;
-    const setup = this.problem?.enableUrl ? ["Open Tailscale Setup"] : [];
-    const text = this.publicUrl
-      ? "Remote access is on. Open the pairing link on the device you want to use. It works once, for 10 minutes."
-      : `Remote access is on for this Mac only. ${this.problem?.advice ?? ""} The link below works on this Mac.`;
-    const choice = await vscode.window.showInformationMessage(text, "Copy Link", "Open in Browser", ...setup);
-    if (choice === "Open Tailscale Setup" && this.problem?.enableUrl) {
-      await vscode.env.openExternal(vscode.Uri.parse(this.problem.enableUrl));
-    } else if (choice === "Copy Link") {
-      await vscode.env.clipboard.writeText(link);
-    } else if (choice === "Open in Browser") {
-      await vscode.env.openExternal(vscode.Uri.parse(link));
+    this.cardLink = `${this.baseUrl()}/#k=${this.pairing.issue()}`;
+    const expires = new Date(Date.now() + PAIRING_MINUTES * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    let svg: string | undefined;
+    if (this.publicUrl) {
+      try {
+        svg = qrSvg(encodeQr(this.cardLink));
+      } catch (err) {
+        this.log(`no QR code: ${errorMessage(err)}`); // the link text is still there
+      }
+    }
+    const html = pairingCardHtml({
+      link: this.cardLink,
+      qrSvg: svg,
+      problem: this.publicUrl ? undefined : { advice: this.problem?.advice ?? "", canOpenSetup: Boolean(this.problem?.enableUrl) },
+      expiresAt: expires,
+    });
+    if (this.card) {
+      this.card.webview.html = html;
+      this.card.reveal();
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel("kiroCliChat.remoteCard", "Kiro Remote Access", vscode.ViewColumn.Active, { enableScripts: true });
+    this.card = panel;
+    panel.webview.html = html;
+    panel.webview.onDidReceiveMessage((msg) => void this.onCardAction(cardAction(msg)));
+    panel.onDidDispose(() => {
+      this.card = undefined;
+      this.cardLink = ""; // the link is not kept once the card is closed
+    });
+  }
+
+  private async onCardAction(action: ReturnType<typeof cardAction>): Promise<void> {
+    switch (action) {
+      case "copy":
+        await vscode.env.clipboard.writeText(this.cardLink);
+        void vscode.window.showInformationMessage("Pairing link copied.");
+        break;
+      case "open":
+        await vscode.env.openExternal(vscode.Uri.parse(this.cardLink));
+        break;
+      case "newLink":
+        await this.showLink();
+        break;
+      case "setup":
+        if (this.problem?.enableUrl) {
+          await vscode.env.openExternal(vscode.Uri.parse(this.problem.enableUrl));
+        }
+        break;
+      case "retry":
+        await this.shareOnTailnet();
+        await this.showLink();
+        break;
+      default:
+        break;
     }
   }
 

@@ -63,6 +63,8 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │    ├─ remoteServer.ts  loopback HTTP server: page, pairing, SSE streams, messages
 │    ├─ remotePage.ts    the HTML and security headers
 │    ├─ assets.ts        the fixed list of files served from media/
+│    ├─ qr.ts            QR encoder (byte mode, L or M, versions 1 to 10) and SVG output; qr.vectors.ts has reference codes for its tests
+│    ├─ pairingCard.ts   the HTML of the card with the QR code and buttons
 │    ├─ tailscale.ts     find the CLI, read status, `tailscale serve` on/off, the tailnet address (command runner injected)
 │    └─ remoteController.ts  (vscode) start/stop, status bar, pairing link, devices, settings
 ├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
@@ -159,6 +161,7 @@ keeps running here. Plan and decisions: `docs/REMOTE-CONTROL.md`.
   label ("Allowed from <device>" or "on the desktop"), so the other screens
   drop their card and say who answered. Questions already did this.
 - Tailscale: after the server listens, `TailscaleServe.expose` runs `tailscale serve --bg --https=8443 http://127.0.0.1:PORT` (8443 so 443 stays free for the user's own serves; Tailscale allows 443, 8443, 10000) and the link is `https://<dns-name>:8443/#k=…`. `serve status --json` is read first, and a port used by anything but a single loopback proxy is refused. Stop runs `serve --https=8443 off`, only if this extension set it up; after a crash the stale mapping points at a dead port and is overwritten at the next start. `allowedHosts` is the tailnet name only (plus loopback). If Serve is not enabled on the tailnet, the command prints an enable URL and waits, so it runs with a timeout and the URL is shown as a button. Without Tailscale the server still runs for this Mac.
+- The pairing card is a webview panel (`pairingCard.ts` builds its HTML, `remoteController.ts` owns it). Showing it issues a new one-use code (the old one stops working); the link lives in the controller, and the page can only post button names. It is closed when a device pairs or remote access stops. `qr.ts` is a small encoder written for this (about 350 lines). Its tests compare it module for module with another encoder (segno 1.6.1) for every version 1 to 10 at L and M and all eight masks, but only for codes that fill their version: segno adds a stray zero byte before the pad bytes, so shorter codes are checked against the standard's padding rule instead (`dataCodewordList`), and the penalty score is checked against segno's. The codes also decode exactly in OpenCV (all versions, padded and full) and from a screenshot of the card.
 - The settings (`kiroCliChat.remote.*`) have machine scope, so a workspace
   cannot turn remote access on; it also refuses to start in an untrusted
   workspace.

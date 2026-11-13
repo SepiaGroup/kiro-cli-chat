@@ -152,9 +152,11 @@ Then:
 
 1. Tick **Remote access** in ⚙ Settings, or run **Kiro CLI Chat: Start Remote
    Access**. A **Remote** item appears in the status bar.
-2. Choose **Copy Link** (send it to the phone, for example with AirDrop or
-   Messages) or **Open in Browser**. The pairing link works once, for 10
-   minutes, and the page removes the secret from the address bar.
+2. A card opens with a QR code. Scan it with the phone's camera, or choose
+   **Copy Link** (and send it, for example with AirDrop or Messages) or **Open
+   in Browser**. **New Link** makes a fresh code. The pairing link works once,
+   for 10 minutes, and the page removes the secret from the address bar. The
+   card closes when a device pairs.
 3. Pick a chat. You see the conversation as it is here, and can send prompts,
    steer, stop a reply, answer questions and **Allow** or **Deny** a command once.
    Both screens stay in step: answer an approval on one and it goes away on the
@@ -189,7 +191,7 @@ on.
 | Kiro CLI Chat: Log In | Runs `kiro-cli login` in a terminal. |
 | Kiro CLI Chat: Attach Image or File | File picker; images attach, other files insert their path. |
 | Kiro CLI Chat: Start / Stop Remote Access | Starts or stops the remote access server. |
-| Kiro CLI Chat: Show Remote Access Link | A new one-use pairing link to copy or open. |
+| Kiro CLI Chat: Show Remote Access Link | The pairing card: a new one-use link as a QR code, to copy or open. |
 | Kiro CLI Chat: Remove Remote Device… | Unpairs one device, or all of them. |
 
 "Current chat" is the chat tab or panel view you used last.
