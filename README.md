@@ -72,7 +72,11 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
 - **Typing while the agent works.** Enter sends your message to the agent
   right away. It reads it at its next step (after a running tool call, not in
   the middle of one), and a line under your message says when. Images and `/`
-  commands wait until the reply is done; Stop cancels the reply.
+  commands wait until the reply is done.
+- **Editor context (optional).** With `kiroCliChat.shareEditorContext` on, the
+  agent is told which files are open in VS Code and which is active (paths
+  only, inside the chat's folder). It is sent with a prompt when it changed,
+  and the chat says so. Works in both chats.
 - **Input.** One line that grows as you type. Enter sends, Shift+Enter adds a
   line. Type `/` for a picker of the engine's commands, agents and skills.
 - **Resume** lists previous sessions for this folder (title, age, message
