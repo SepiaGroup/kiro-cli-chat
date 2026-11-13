@@ -359,7 +359,9 @@ html, body {
 .settings {
   padding: 10px 12px;
   margin: 6px 8px;
-  overflow: hidden;
+  flex: 0 0 auto; /* never squashed to its header by the page's column layout */
+  max-height: 75%;
+  overflow-y: auto;
   border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border));
   border-radius: 6px;
   box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
@@ -594,6 +596,8 @@ html, body {
 /* Resume (previous sessions) panel */
 .resume-panel {
   margin: 6px 8px;
+  flex: 0 1 auto;
+  min-height: 8em;
   overflow: hidden;
   border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border));
   border-radius: 6px;
