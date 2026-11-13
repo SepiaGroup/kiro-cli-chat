@@ -16,7 +16,8 @@ Under `~/Library/Application Support/kiro-cli/`:
 
 - Engine (ACP server): `kas/<version>/node_modules/@kiro/agent/dist/server/acp-server.js`
   (plus `.d.ts` files next to it for types). One big bundle.
-- kiro-cli TUI (the UI to mimic: approval choices, keys, wording): `tui.js`.
+- kiro-cli TUI (the UI to mimic: approval choices, keys, wording): `tui.js`,
+  directly in `~/Library/Application Support/kiro-cli/` (not under `kas/`).
 
 ```sh
 D="$HOME/Library/Application Support/kiro-cli"

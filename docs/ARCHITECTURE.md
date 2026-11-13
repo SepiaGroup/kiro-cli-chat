@@ -55,6 +55,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ editorContext.ts  open/active editor files as a prompt context item (paths only, off by default)
 ├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
+├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn
 ├─ detect.ts         whoami, engine list + health check, models, sessions
@@ -219,6 +220,17 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   prompts and steering documents, never for a chat prompt (verified live: they
   are not expanded in user text), so we don't answer them. Its own environment
   note says no files are open, hence the sentence in our text.
+- Errors: a failing turn puts its text into the reply as an
+  `agent_message_chunk` (`abortedWithError`) and `session/prompt` may reject.
+  For `InsufficientModelCapacityError` and `HighLoadError` the engine also sends
+  the notification `_kiro/error/rate_limit` `{sessionId, message}` while it
+  retries; the TUI shows it as a 5 s red alert and keeps the turn going, and so
+  do we (a `notice` with `isError`). `tui.js` (in `~/Library/Application
+  Support/kiro-cli/`) cleans and classifies a rejected prompt's message
+  (`aRt`, `Lfe`, `Pfe`) and gives a hint only for auth and session; we port
+  those rules to `errorAdvice.ts` and add the hint also for network and rate
+  limit. Not verified live: the engine's exact errors for a lapsed login or a
+  dropped connection.
 - Steering: `_session/steer` `{sessionId, message, messageId?}` while a turn
   runs returns `{queued: true, messageId: "steer-<id>"}`. Updates arrive as
   `session_info_update` with `_meta.kiro.kind` `steering_queued`,

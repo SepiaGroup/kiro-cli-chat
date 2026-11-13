@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import { AcpClient } from "../acpClient";
 import { editorContextFor, readConfig } from "../config";
 import { NotLoggedInError, prepareEngine, resetPreparedEngine } from "../enginePrep";
+import { describeError } from "../errorAdvice";
 import { errorMessage, formatDuration } from "../format";
 import { AvailableCommand, ChatEvent, PromptImage } from "../types";
 import { crlf, sanitize, style, term, truncate } from "./ansi";
@@ -439,7 +440,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
       }
       case "notice":
         this.endAssistant();
-        this.print(style.gray(sanitize(ev.text)));
+        this.print((ev.isError ? style.red : style.gray)(sanitize(ev.text)));
         break;
       case "error":
         this.endAssistant();
@@ -549,7 +550,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     } catch (err) {
       if (!this.isClosed()) {
         this.endAssistant();
-        this.print(style.red(errorMessage(err)));
+        this.print(style.red(sanitize(describeError(errorMessage(err), "type /login"))));
       }
     }
     if (this.isClosed()) {

@@ -457,3 +457,31 @@ test("@file: works in a steering message", async () => {
     c.dispose();
   }
 });
+
+test("the engine's rate-limit notification shows as an error notice and does not end the turn", async () => {
+  const cli = fakeEngine(
+    "ratelimit",
+    `async (msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        send({ method: "_kiro/error/rate_limit", params: { sessionId: "s1", message: "The model is busy, retrying." } });
+        send({ method: "_kiro/error/rate_limit", params: { sessionId: "s1" } });
+        send({ id: msg.id, result: { stopReason: "end_turn" } });
+      }
+    }`
+  );
+  const { c, events } = client(cli);
+  try {
+    await c.start();
+    await c.prompt("hi");
+    const notices = events.flatMap((e) => (e.kind === "notice" ? [[e.text, e.isError]] : []));
+    assert.deepEqual(notices, [
+      ["The model is busy, retrying.", true],
+      ["Rate limit exceeded. Please wait a moment before trying again.", true],
+    ]);
+    assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "success"));
+    assert.equal(events.some((e) => e.kind === "error"), false);
+  } finally {
+    c.dispose();
+  }
+});

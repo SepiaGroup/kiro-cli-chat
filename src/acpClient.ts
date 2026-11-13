@@ -6,6 +6,7 @@ import { EditorSnapshot, editorContextNotice, editorContextText } from "./editor
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { EventEmitter } from "events";
 import { JsonLineParser, lineSplitter } from "./jsonLineParser";
+import { RATE_LIMIT_ADVICE } from "./errorAdvice";
 import { mapPermissionRequest, mapSessionUpdate } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
 import { checkFolder, cleanReason, folderResource, isShell } from "./approvalRules";
@@ -646,6 +647,13 @@ export class AcpClient extends EventEmitter {
         this.emit("event", ev);
       }
       return;
+    }
+    if (method === "_kiro/error/rate_limit") {
+      // The engine is short of capacity. The turn goes on (it retries), so this is
+      // a warning, not the end of the reply; the kiro-cli TUI shows it the same way.
+      const message = (params as { message?: unknown } | null)?.message;
+      const text = typeof message === "string" && message.trim() ? message.trim() : RATE_LIMIT_ADVICE;
+      this.emit("event", { kind: "notice", text, isError: true } as ChatEvent);
     }
     this.emit("notification", method, params);
   }
