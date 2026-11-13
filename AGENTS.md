@@ -15,7 +15,7 @@ steps are in [CONTRIBUTING.md](CONTRIBUTING.md), manual checks in
 
 - Engine side, shared by both UIs: `acpClient.ts` (transport), `eventMapper.ts`
   (ACP → `ChatEvent`), `approvalRules.ts`, `questions.ts`, `fileMentions.ts`,
-  `editorContext.ts`, `errorAdvice.ts`, `detect.ts`, `cli.ts`, `enginePrep.ts`,
+  `editorContext.ts`, `errorAdvice.ts`, `remote/*` (remote access core, pure), `detect.ts`, `cli.ts`, `enginePrep.ts`,
   `types.ts`.
 - Webview chat (editor tabs + panel view): `chatViewProvider.ts`,
   `chatSession.ts` (extension side, with `uiTargets.ts` for its screens) and `webview/*.ts` (browser side, bundled
