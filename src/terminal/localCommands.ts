@@ -186,6 +186,7 @@ export class LocalCommands {
       style.bold("Keys"),
       style.gray("  Enter send · Shift+Enter, Ctrl+J or a trailing \\ for a new line · ↑/↓ history"),
       style.gray("  Esc or Ctrl+C cancel a reply · Ctrl+L clear · Ctrl+D close"),
+      style.gray("  While the agent works: Enter sends it your line · Esc first takes back a line it hasn't read"),
       "",
       style.bold("Images"),
       style.gray("  Drag image files onto this terminal (or type their paths), or /paste a copied image."),

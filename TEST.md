@@ -100,7 +100,7 @@ Then run **Developer: Reload Window**.
 ### Questions and files
 - [ ] In Spec mode, ask for something that needs a decision (for example "ask me to pick a color from red, blue, green with your question tool"). A card shows the choices; clicking one sends it and the agent uses it.
 - [ ] Typing your own answer and pressing Enter sends it. Skip tells the agent to move on.
-- [ ] A question left open and then cancelled (Esc, Stop) disappears from the chat. After a window reload an unanswered question card comes back.
+- [ ] A question left open and then cancelled (Esc in the terminal chat) disappears from the chat. After a window reload an unanswered question card comes back.
 - [ ] `what is in @file:README.md?` → the agent knows the contents; the chat and a Resumed session show `@file:README.md`, not the file's text. `@file:missing.txt` stays as typed. A line in the chat says "Attached: …" and "Not attached: … (reason)". A file over 256 KB or a binary file isn't attached.
 
 ### Editor context
@@ -138,4 +138,4 @@ Then run **Developer: Reload Window**.
 ### Engine failures
 - [ ] Set `kiroCliChat.kiroCliPath` to a file that doesn't exist → the chat says the setting points to a missing file.
 - [ ] Start a long reply, then `pkill -f "kiro-cli-chat acp"` → the chat says the engine exited, leaves the busy state, and Restart works.
-- [ ] Esc / Stop during a reply → the terminal footer shows "■ Cancelled".
+- [ ] Esc during a reply → the terminal footer shows "■ Cancelled".
