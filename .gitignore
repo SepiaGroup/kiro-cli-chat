@@ -5,3 +5,4 @@ media/webview.js
 media/webview.js.map
 *.vsix
 .DS_Store
+semantic-review/
