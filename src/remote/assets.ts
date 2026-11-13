@@ -8,6 +8,7 @@ export const ASSET_NAMES: ReadonlySet<string> = new Set([
   "remote.css",
   "manifest.webmanifest",
   "icon.png",
+  "icon@2x.png",
   "icon.svg",
 ]);
 

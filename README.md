@@ -153,7 +153,7 @@ Tailscale comes in a later version.
 A paired device stays paired until you remove it (**Remove Remote Device…**).
 Remote access is off by default and when VS Code closes. From a remote device
 you cannot create allow or deny rules, turn Autopilot on, restart the engine,
-log in or open tabs. Terminal chats are not shown. The settings below are
+log in or open tabs. The page fits a phone (light or dark by the device's setting, large buttons, Enter adds a line and the Send button sends) and can be added to the home screen. Terminal chats are not shown. The settings below are
 machine settings, so a workspace cannot turn remote access on.
 
 ## Commands

@@ -11,7 +11,18 @@ export const REMOTE_ASSETS = {
   style: "/static/webview.css",
   remoteStyle: "/static/remote.css",
   manifest: "/static/manifest.webmanifest",
+  icon: "/static/icon@2x.png",
 } as const;
+
+/** Phone browser hints: theme colour, and run like an app when added to the home screen. */
+const HEAD_EXTRA = [
+  `<meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)" />`,
+  `<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />`,
+  `<meta name="mobile-web-app-capable" content="yes" />`,
+  `<meta name="apple-mobile-web-app-capable" content="yes" />`,
+  `<meta name="apple-mobile-web-app-title" content="Kiro Chat" />`,
+  `<link rel="apple-touch-icon" href="${REMOTE_ASSETS.icon}" />`,
+].join("\n") + "\n";
 
 /** The page, with a fresh script nonce. Everything it loads is from its own origin. */
 export function remotePageHtml(): string {
@@ -23,6 +34,7 @@ export function remotePageHtml(): string {
     manifestUri: REMOTE_ASSETS.manifest,
     preScriptUris: [REMOTE_ASSETS.shim],
     extraStyleUris: [REMOTE_ASSETS.remoteStyle],
+    headExtra: HEAD_EXTRA,
   });
 }
 

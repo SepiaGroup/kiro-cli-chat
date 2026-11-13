@@ -30,8 +30,14 @@ let pageState: unknown;
   },
 });
 
+const touchScreen = window.matchMedia("(pointer: coarse)").matches;
+
 /** Hand a message to the chat page, as VS Code would. */
 function deliver(data: unknown): void {
+  // A phone keyboard has no Shift+Enter: Enter adds a line and the Send button sends.
+  if (touchScreen && (data as Msg | undefined)?.type === "ready") {
+    data = { ...(data as Msg), enterToSend: false };
+  }
   window.dispatchEvent(new MessageEvent("message", { data }));
 }
 
@@ -57,7 +63,20 @@ bar.setAttribute("role", "status");
 bar.textContent = "Reconnecting…";
 
 document.body.append(gate, bar);
-document.body.classList.add("remote-page"); // hides what only works on the desktop (see remote.css)
+document.body.classList.add("remote-page");
+document.getElementById("input")?.setAttribute("placeholder", "Message Kiro…");
+
+// On iOS the keyboard covers the page instead of shrinking it: follow the visible area.
+const viewport = window.visualViewport;
+if (viewport) {
+  const fit = (): void => {
+    document.documentElement.style.setProperty("--app-height", `${Math.round(viewport.height)}px`);
+    window.scrollTo(0, 0);
+  };
+  viewport.addEventListener("resize", fit);
+  viewport.addEventListener("scroll", fit);
+  fit();
+} // hides what only works on the desktop (see remote.css)
 
 function showGate(kind: GateKind, chats: readonly ChatInfo[] = []): void {
   closeStream();
