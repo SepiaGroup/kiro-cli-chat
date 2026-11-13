@@ -17,6 +17,11 @@ import { imageMimeForPath, sniffImageMime } from "./terminal/imagePaths";
 import { resetPreparedEngine } from "./enginePrep";
 import { isRuleKind } from "./approvalRules";
 import { ApprovalAnswer, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
+import { ChatTranscript } from "./chatTranscript";
+import { errorMessage } from "./format";
+import { pickSessions } from "./sessionList";
+import { webviewHtml } from "./webviewHtml";
+import { MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
 type Transport =
   | { mode: "persistent"; client: AcpClient }
@@ -41,12 +46,8 @@ export class ChatSession {
   private resumeSessionId?: string;
   // Map ACP server-request id -> approval toolCallId, for persistent mode.
   private pendingApprovals = new Map<string, RpcId>();
-  // Transcript + latest state snapshots, replayed into a re-created webview.
-  private transcript: unknown[] = [];
-  private lastReady?: unknown;
-  private lastConfig?: unknown;
-  private lastCommands?: unknown;
-  private lastContext?: unknown;
+  // What the chat shows, replayed into a re-created webview.
+  private readonly transcript = new ChatTranscript();
   private disposed = false;
   // Whether the current webview's script has loaded (sent "ready").
   private webviewReady = false;
@@ -74,7 +75,13 @@ export class ChatSession {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "media")],
     };
-    webview.html = getHtml(this.context, webview);
+    const media = (file: string): string =>
+      webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "media", file)).toString();
+    webview.html = webviewHtml({
+      scriptUri: media("webview.js"),
+      styleUri: media("webview.css"),
+      cspSource: webview.cspSource,
+    });
     this.host = webview;
     this.webviewReady = false;
     this.hostSub = webview.onDidReceiveMessage((msg) => {
@@ -239,23 +246,11 @@ export class ChatSession {
     }
   }
 
-  /** Once answered, don't resurrect an approval card when restoring a webview. */
-  private dropApprovalCard(toolCallId: string): void {
-    this.transcript = this.transcript.filter((msg) => {
-      const m = msg as { type?: string; event?: { kind?: string; request?: { toolCallId?: string } } };
-      return !(
-        m.type === "event" &&
-        m.event?.kind === "approvalRequest" &&
-        (m.event.request?.toolCallId ?? "") === toolCallId
-      );
-    });
-  }
-
   private handleApproval(toolCallId: string, answer: ApprovalAnswer): void {
     if (this.transport?.mode !== "persistent") {
       return;
     }
-    this.dropApprovalCard(toolCallId);
+    this.transcript.dropApprovalCard(toolCallId);
     // Answer the specific pending request for this tool call. Fall back to the
     // only pending request if the UI didn't supply a toolCallId.
     let requestId = this.pendingApprovals.get(toolCallId);
@@ -544,26 +539,11 @@ export class ChatSession {
     // Tell the webview we're loading (it shows a spinner).
     this.post({ type: "sessionListLoading" });
 
-    const cwd = normalizePath(this.workspaceCwd());
     const sessions = await listSessions(this.cliPath, this.workspaceCwd(), (m) =>
       this.log(m)
     );
     const engineSource = this.resolvedEngine;
-
-    // Prefer sessions matching this engine + folder, but progressively relax.
-    const sameEngineAndCwd = sessions.filter(
-      (s) => s.source === engineSource && normalizePath(s.cwd) === cwd
-    );
-    const sameEngine = sessions.filter((s) => s.source === engineSource);
-    const candidates =
-      sameEngineAndCwd.length > 0
-        ? sameEngineAndCwd
-        : sameEngine.length > 0
-          ? sameEngine
-          : sessions;
-
-    // Sort newest first.
-    candidates.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    const candidates = pickSessions(sessions, engineSource, this.workspaceCwd());
     this.log(
       `[resume] engine=${String(engineSource)} showing=${candidates.length}`
     );
@@ -745,55 +725,13 @@ export class ChatSession {
     } else if (m?.type) {
       this.log(`[post] ${m.type}`);
     }
-    this.record(msg);
+    this.transcript.record(msg);
+    if (m?.type === "event" && m.event?.kind === "approvalResolved") {
+      // Answered by a rule: nothing left to answer.
+      this.pendingApprovals.delete((m.event as { toolCallId?: string }).toolCallId ?? "");
+    }
     if (this.host && !this.disposed) {
       void this.host.postMessage(msg);
-    }
-  }
-
-  /**
-   * Keep a transcript of what the chat shows, so a re-created webview (VS Code
-   * rebuilds it when the view is moved between panel/side bar) can be restored.
-   */
-  private record(msg: unknown): void {
-    const m = msg as { type?: string; event?: { kind?: string } };
-    switch (m?.type) {
-      case "ready":
-        this.lastReady = msg;
-        break;
-      case "cleared":
-        this.transcript = [];
-        break;
-      case "userMessage":
-      case "error":
-      case "notice":
-        this.transcript.push(msg);
-        break;
-      case "event": {
-        const kind = m.event?.kind;
-        // Settings/commands state: keep only the latest snapshot.
-        if (kind === "configOptions") {
-          this.lastConfig = msg;
-        } else if (kind === "availableCommands") {
-          this.lastCommands = msg;
-        } else if (kind === "contextUsage") {
-          this.lastContext = msg;
-        } else if (kind === "approvalResolved") {
-          // Answered by a rule: no card to restore, and nothing pending.
-          const id = (m.event as { toolCallId?: string }).toolCallId ?? "";
-          this.dropApprovalCard(id);
-          this.pendingApprovals.delete(id);
-          this.transcript.push(msg);
-        } else {
-          this.transcript.push(msg);
-        }
-        break;
-      }
-      default:
-        break;
-    }
-    if (this.transcript.length > MAX_TRANSCRIPT) {
-      this.transcript.splice(0, this.transcript.length - MAX_TRANSCRIPT);
     }
   }
 
@@ -802,174 +740,8 @@ export class ChatSession {
     const send = (msg: unknown): void => {
       void target.postMessage(msg);
     };
-    if (this.lastReady) {
-      send(this.lastReady);
-    }
-    for (const msg of this.transcript) {
-      send(msg);
-    }
-    for (const msg of [this.lastConfig, this.lastCommands, this.lastContext]) {
-      if (msg) {
-        send(msg);
-      }
-    }
-    this.log(`[resync] restored ${this.transcript.length} messages`);
+    const msgs = this.transcript.replay();
+    msgs.forEach(send);
+    this.log(`[resync] restored ${msgs.length} messages`);
   }
-}
-
-const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_IMAGES = 10;
-const MAX_TRANSCRIPT = 20000;
-
-/** Validate image attachments posted by the webview before forwarding them. */
-function sanitizeImages(raw: unknown): PromptImage[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const out: PromptImage[] = [];
-  for (const item of raw.slice(0, MAX_IMAGES)) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const r = item as Record<string, unknown>;
-    const mimeType = String(r.mimeType ?? "");
-    const data = typeof r.data === "string" ? r.data : "";
-    if (!ALLOWED_IMAGE_TYPES.has(mimeType) || !data || !/^[A-Za-z0-9+/=]+$/.test(data)) {
-      continue;
-    }
-    // Base64 expands by 4/3; reject oversized payloads.
-    if ((data.length * 3) / 4 > MAX_IMAGE_BYTES) {
-      continue;
-    }
-    out.push({ mimeType, data, name: r.name ? String(r.name).slice(0, 200) : undefined });
-  }
-  return out;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * Normalize a filesystem path for comparison: strip a trailing slash and
- * collapse the macOS `/private` symlink prefix (e.g. `/private/tmp` vs `/tmp`)
- * so session cwd matching is resilient.
- */
-function normalizePath(p: string | undefined): string {
-  let s = String(p ?? "");
-  if (s.length > 1 && s.endsWith("/")) {
-    s = s.slice(0, -1);
-  }
-  if (s.startsWith("/private/")) {
-    s = s.slice("/private".length);
-  }
-  return s;
-}
-
-function getNonce(): string {
-  let text = "";
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
-}
-
-/** The chat webview's HTML (same for every chat). */
-function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, "media", "webview.js")
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, "media", "webview.css")
-  );
-  const nonce = getNonce();
-  const csp = [
-    `default-src 'none'`,
-    `img-src ${webview.cspSource} data:`,
-    `style-src ${webview.cspSource}`,
-    `script-src 'nonce-${nonce}'`,
-  ].join("; ");
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="${csp}" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link href="${styleUri}" rel="stylesheet" />
-<title>Kiro CLI Chat</title>
-</head>
-<body>
-<div id="app">
-<div id="toolbar">
-  <select id="sel-model" class="toolbar-model" title="Model" aria-label="Model" disabled>
-    <option>Auto</option>
-  </select>
-  <button id="ctx-meter" class="ctx-meter hidden" aria-describedby="ctx-card" aria-label="Context usage">
-    <svg class="ctx-ring" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <circle class="ctx-ring-bg" cx="10" cy="10" r="8" />
-      <circle id="ctx-ring-fg" class="ctx-ring-fg" cx="10" cy="10" r="8" />
-    </svg>
-    <span id="ctx-text" class="ctx-text"></span>
-  </button>
-  <div id="ctx-card" class="ctx-card hidden" role="tooltip"></div>
-  <span id="status">Starting…</span>
-  <span id="spacer"></span>
-  <select id="sel-mode" class="toolbar-model toolbar-mode" title="Agent mode" aria-label="Agent mode" disabled>
-    <option>Default</option>
-  </select>
-  <button id="btn-resume" title="Resume previous session">Resume</button>
-  <button id="btn-restart" title="Restart engine">Restart</button>
-  <button id="btn-new-tab" title="New chat tab" aria-label="New chat tab">＋</button>
-  <button id="btn-settings" title="Settings">⚙</button>
-</div>
-<div id="resume-panel" class="resume-panel hidden">
-  <div id="resume-header" class="resume-header">
-    <span>Previous sessions</span>
-    <button id="resume-close" class="resume-close" title="Close" aria-label="Close previous sessions">✕</button>
-  </div>
-  <div id="resume-list" class="resume-list"></div>
-</div>
-<div id="settings" class="settings hidden">
-  <div class="panel-header settings-header">
-    <span>Settings</span>
-    <button id="settings-close" class="resume-close" title="Close" aria-label="Close settings">✕</button>
-  </div>
-  <div class="settings-row hidden" id="effort-row">
-    <label for="sel-effort">Effort</label>
-    <select id="sel-effort"></select>
-  </div>
-  <div class="settings-row">
-    <label for="chk-autopilot">Autopilot</label>
-    <input type="checkbox" id="chk-autopilot" />
-  </div>
-  <div class="settings-note">Autopilot auto-approves tool actions. Off = Supervised (approve each change).</div>
-  <div class="settings-row">
-    <label for="sel-memory">Memory reflection</label>
-    <select id="sel-memory"></select>
-  </div>
-  <div class="settings-note">Lets the session learn and store new long-term memories.</div>
-  <div class="settings-row">
-    <label for="sel-content">Content collection</label>
-    <select id="sel-content"></select>
-  </div>
-  <div class="settings-note">Whether your content may be used for service improvement.</div>
-</div>
-<div id="messages"></div>
-<div id="composer">
-  <div id="cmd-picker" class="cmd-picker hidden" role="listbox" aria-label="Slash commands"></div>
-  <div id="cmd-hint" class="cmd-hint hidden"></div>
-  <div id="attachments" class="attachments hidden" aria-label="Attached images"></div>
-  <textarea id="input" rows="1" placeholder="Ask Kiro something…  (/ for commands)" aria-label="Message"></textarea>
-  <button id="btn-send" title="Send (Enter)" aria-label="Send">
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-  </button>
-</div>
-</div>
-<script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

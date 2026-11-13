@@ -10,6 +10,8 @@ import { AcpClient } from "../acpClient";
 import { checkFolder, truncate as shorten } from "../approvalRules";
 import { readConfig } from "../config";
 import { listSessions } from "../detect";
+import { errorMessage, formatElapsed } from "../format";
+import { pickSessions } from "../sessionList";
 import { NotLoggedInError, prepareEngine, resetPreparedEngine } from "../enginePrep";
 import {
   ApprovalAnswer,
@@ -1156,13 +1158,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     const sessions = await this.runBusy("Loading sessions", () =>
       listSessions(prep.cliPath, this.cwd(), (m) => this.log(m))
     );
-    const cwd = normalizePath(this.cwd());
-    const others = sessions.filter((s) => s.sessionId !== client.currentSessionId);
-    const sameBoth = others.filter((s) => s.source === this.engine && normalizePath(s.cwd) === cwd);
-    const sameEngine = others.filter((s) => s.source === this.engine);
-    const list = (sameBoth.length ? sameBoth : sameEngine.length ? sameEngine : others)
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-      .slice(0, 15);
+    const list = pickSessions(sessions, this.engine, this.cwd(), client.currentSessionId).slice(0, 15);
     this.lastSessions = list;
     if (list.length === 0) {
       this.print(style.gray("No previous sessions found."));
@@ -1753,12 +1749,6 @@ function formatDuration(ms: number): string {
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-function formatElapsed(ms: number): string {
-  return ms < 60_000
-    ? `${(ms / 1000).toFixed(1)}s`
-    : `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
-}
-
 function truncate(s: string, max: number): string {
   const plain = stripAnsi(s);
   return plain.length > max ? plain.slice(0, Math.max(1, max - 1)) + "…" : s;
@@ -1781,12 +1771,4 @@ function relativeTime(iso: string): string {
     return `${hours}h ago`;
   }
   return `${Math.round(hours / 24)}d ago`;
-}
-
-function normalizePath(p: string): string {
-  return path.resolve(p).replace(/\/+$/, "");
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
