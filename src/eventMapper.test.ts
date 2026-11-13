@@ -269,3 +269,17 @@ test("approvals without consent info keep the engine's options", () => {
   assert.deepEqual(r.options.map((o) => o.name), ["Allow", "Deny"]);
   assert.equal(r.allowRules, undefined);
 });
+
+test("steering updates map to steer events", () => {
+  const upd = (kiro: Record<string, unknown>) => ({ sessionId: "s", update: { sessionUpdate: "session_info_update", _meta: { kiro } } });
+  assert.deepEqual(mapSessionUpdate(upd({ kind: "steering_queued", messageId: "steer-1", content: "x" })).filter((e) => e.kind === "steer"), [
+    { kind: "steer", state: "queued", messageIds: ["steer-1"] },
+  ]);
+  assert.deepEqual(mapSessionUpdate(upd({ kind: "steering_injected", messageId: "steer-1" })).filter((e) => e.kind === "steer"), [
+    { kind: "steer", state: "injected", messageIds: ["steer-1"] },
+  ]);
+  assert.deepEqual(mapSessionUpdate(upd({ kind: "steering_cleared", messageIds: ["a", 5, "b"] })).filter((e) => e.kind === "steer"), [
+    { kind: "steer", state: "cleared", messageIds: ["a", "b"] },
+  ]);
+  assert.deepEqual(mapSessionUpdate(upd({ kind: "steering_queued" })).filter((e) => e.kind === "steer"), []);
+});

@@ -11,6 +11,8 @@ First release.
 - The agent's questions (Spec mode) as a card or numbered choices, with your
   own answer or Skip. `@file:path` in a prompt attaches the file. A prompt the
   engine never answers is cancelled after 10 minutes.
+- Typing while the agent works sends your message to it (it reads it at its
+  next step); in the terminal Esc takes back a message it hasn't read yet.
 - Optional (`kiroCliChat.shareEditorContext`, off by default): tell the agent
   which files are open and which is active.
 - Model, mode, effort and Autopilot switching; context breakdown and

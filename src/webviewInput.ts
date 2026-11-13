@@ -9,6 +9,15 @@ export const MAX_IMAGES = 10;
 /** Longest typed answer to the agent's question. */
 export const MAX_ANSWER = 4000;
 
+/** Longest message typed while the agent works. */
+export const MAX_STEER = 20000;
+
+/** A message typed while the agent works; undefined = nothing to send. */
+export function cleanSteer(raw: unknown): string | undefined {
+  const text = typeof raw === "string" ? raw.trim().slice(0, MAX_STEER) : "";
+  return text || undefined;
+}
+
 /** An answer from the webview to the agent's question; undefined = skipped. */
 export function cleanAnswer(raw: unknown): string | undefined {
   const text = typeof raw === "string" ? raw.trim().slice(0, MAX_ANSWER) : "";

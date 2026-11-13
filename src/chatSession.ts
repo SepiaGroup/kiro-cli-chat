@@ -21,7 +21,7 @@ import { ChatTranscript } from "./chatTranscript";
 import { errorMessage } from "./format";
 import { pickSessions } from "./sessionList";
 import { webviewHtml } from "./webviewHtml";
-import { cleanAnswer, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
+import { cleanAnswer, cleanSteer, MAX_IMAGE_BYTES, MAX_IMAGES, sanitizeImages } from "./webviewInput";
 
 type Transport =
   | { mode: "persistent"; client: AcpClient }
@@ -134,6 +134,9 @@ export class ChatSession {
           ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
         });
         break;
+      case "steerPrompt":
+        await this.handleSteer(cleanSteer(msg.text));
+        break;
       case "answerQuestion":
         this.handleQuestionAnswer(String(msg.toolCallId ?? ""), cleanAnswer(msg.answer));
         break;
@@ -209,6 +212,25 @@ export class ChatSession {
         }
         await this.transport.runner.prompt(text);
       }
+    } catch (err) {
+      this.post({ type: "error", message: errorMessage(err) });
+    }
+  }
+
+  /** Text typed while the agent works goes to it as a steering message. */
+  private async handleSteer(text: string | undefined): Promise<void> {
+    if (!text) {
+      return;
+    }
+    const t = this.transport;
+    if (t?.mode !== "persistent" || !t.client.turnRunning) {
+      // The reply ended just now: it's an ordinary prompt.
+      await this.handlePrompt(text);
+      return;
+    }
+    this.post({ type: "userMessage", text, images: [] });
+    try {
+      await t.client.steer(text);
     } catch (err) {
       this.post({ type: "error", message: errorMessage(err) });
     }

@@ -87,6 +87,11 @@ Then run **Developer: Reload Window**.
 - [ ] Allow applies the change; Deny skips it.
 - [ ] With `autopilot` on, tools run without asking.
 
+### Typing while the agent works
+- [ ] Ask for something slow (for example "run `sleep 20`, then say DONE"). While it runs, type "also end with the word BANANA" and press Enter. A line says it is queued, then that the agent has read it (after the command ends), and the reply includes BANANA.
+- [ ] Terminal: the text you type shows on the status line ("Enter sends: …"). Esc takes back a queued message ("message removed"); another Esc cancels the reply. `/help` mid-reply says commands can't run; dropping an image does too.
+- [ ] Webview: `/…` or an attached image while busy shows a short error and keeps your text.
+
 ### Questions and files
 - [ ] In Spec mode, ask for something that needs a decision (for example "ask me to pick a color from red, blue, green with your question tool"). A card shows the choices; clicking one sends it and the agent uses it.
 - [ ] Typing your own answer and pressing Enter sends it. Skip tells the agent to move on.

@@ -49,7 +49,7 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │    ├─ ansi.ts              escape helpers, width/fit/wrap
 │    └─ imagePaths.ts        finds dragged image paths in a prompt
 │
-├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals (+ consent rules), ext methods
+├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals (+ consent rules), questions, steering, ext methods
 ├─ approvalRules.ts  approval rule choices + folder checks (shared with the webview)
 ├─ questions.ts      the agent's questions: parse `_kiro/userInput`, build the answer text
 ├─ editorContext.ts  open/active editor files as a prompt context item (paths only, off by default)
@@ -70,6 +70,8 @@ webview/ (bundled to media/webview.js, runs inside the webview)
 ├─ messages.ts       user prompts and streamed markdown replies
 ├─ toolCards.ts      terminal-style tool cards (paths, status, diff, output)
 ├─ approvalCard.ts   approval card (choices, rule list, folder, reason)
+├─ questionCard.ts   the agent's question (choices, own answer, checklist)
+├─ steerNotes.ts     the status line under a message sent mid-reply
 ├─ attachments.ts    image attachments, drag-and-drop, paste
 ├─ dropPaths.ts      pure: paths and image types from a drop (tested)
 ├─ commandPicker.ts  "/" picker and argument hint
@@ -217,6 +219,16 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   prompts and steering documents, never for a chat prompt (verified live: they
   are not expanded in user text), so we don't answer them. Its own environment
   note says no files are open, hence the sentence in our text.
+- Steering: `_session/steer` `{sessionId, message, messageId?}` while a turn
+  runs returns `{queued: true, messageId: "steer-<id>"}`. Updates arrive as
+  `session_info_update` with `_meta.kiro.kind` `steering_queued`,
+  `steering_injected` (the agent has it: at its next model call, so after a
+  running tool call) and `steering_cleared` (`messageIds`, also at the end of
+  the turn for the ones read). The engine keeps a turn going until unread
+  steering is delivered. `_session/steer/clear` drops unread ones and emits
+  `steering_cleared` before it replies. The agent adds a `[STEERING …]` note to
+  its reply. The client reports ids still unread at "cleared" or at the end of
+  the turn as `dropped`, or `removed` after `clearSteers()`. Images can't be steered.
 - Watchdog (as in the TUI): no `session/update` or server request within 10
   minutes of the prompt → `session/cancel` and an error. After the first
   event there is no limit; a quiet turn is logged after 30 s.

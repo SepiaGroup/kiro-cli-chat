@@ -69,6 +69,10 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
   (1 MB per prompt); anything else is left as typed. The chat says which files
   were attached and which were not. Any path you type is read, also outside the
   folder (as kiro-cli does), so check pasted text before you send it.
+- **Typing while the agent works.** Enter sends your message to the agent
+  right away. It reads it at its next step (after a running tool call, not in
+  the middle of one), and a line under your message says when. Images and `/`
+  commands wait until the reply is done; Stop cancels the reply.
 - **Input.** One line that grows as you type. Enter sends, Shift+Enter adds a
   line. Type `/` for a picker of the engine's commands, agents and skills.
 - **Resume** lists previous sessions for this folder (title, age, message
@@ -116,7 +120,10 @@ Commands follow kiro-cli: `/help`, `/clear`, `/new`, `/chat new|save|load`,
   to send `/...` as plain text.
 
 Keys: Enter sends, Shift+Enter adds a new line, Esc cancels a reply, ↑/↓ for
-history. Drag image files onto the terminal (or type their paths), or `/paste`
+history. While the agent works you can still type: the line shows on the status
+line, and Enter sends it to the agent, which reads it at its next step. Esc
+first takes back a message the agent hasn't read yet, and the next Esc cancels
+the reply. Commands and images wait until the reply is done. Drag image files onto the terminal (or type their paths), or `/paste`
 a copied image, to attach them.
 
 ## Commands

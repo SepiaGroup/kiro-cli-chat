@@ -180,13 +180,17 @@ export class TerminalChat implements vscode.Pseudoterminal {
         case "changed":
           if (this.state === "idle") {
             this.redrawPrompt();
+          } else if (this.state === "busy") {
+            this.tickSpinner(); // shows the draft on the status line
           }
           break;
         case "submit":
           if (this.state === "idle") {
             void this.submit(action.text);
+          } else if (this.state === "busy" && this.client?.turnRunning) {
+            this.steer(action.text);
           } else {
-            this.write("\x07"); // bell: still busy (the text stays in the box)
+            this.write("\x07"); // bell: busy with something else (the text stays in the box)
           }
           break;
         case "interrupt":
@@ -194,7 +198,12 @@ export class TerminalChat implements vscode.Pseudoterminal {
           break;
         case "escape":
           if (this.state === "busy") {
-            this.cancelTurn();
+            if (this.client?.hasQueuedSteers) {
+              // First Esc takes back the message the agent hasn't read yet.
+              this.client.clearSteers().catch((err) => this.print(style.red(errorMessage(err))));
+            } else {
+              this.cancelTurn();
+            }
           }
           break;
         case "eof":
@@ -411,6 +420,23 @@ export class TerminalChat implements vscode.Pseudoterminal {
       case "availableCommands":
         this.engineCommands = ev.commands;
         break;
+      case "steer": {
+        this.endAssistant();
+        const line =
+          ev.state === "queued"
+            ? style.gray("  ↳ queued: the agent reads it at its next step. Esc removes it.")
+            : ev.state === "injected"
+              ? style.gray("  ↳ the agent has read your message.")
+              : ev.state === "removed"
+                ? style.gray("  ↳ message removed.")
+                : ev.state === "dropped"
+                  ? style.yellow("  ↳ the agent did not get your message. Send it again.")
+                  : "";
+        if (line) {
+          this.print(line);
+        }
+        break;
+      }
       case "notice":
         this.endAssistant();
         this.print(style.gray(sanitize(ev.text)));
@@ -615,6 +641,33 @@ export class TerminalChat implements vscode.Pseudoterminal {
     }
     this.lastInterrupt = now;
     this.print(style.gray("Press Ctrl+C again to close this chat (or type /exit)."));
+  }
+
+  /** Enter while the agent works: send the line as a steering message. */
+  private steer(text: string): void {
+    const client = this.client;
+    if (!client || !text.trim()) {
+      return;
+    }
+    if (/^\/[a-z][\w-]*(\s|$)/i.test(text)) {
+      this.print(
+        style.yellow("Commands can't run while the agent works.") +
+          style.gray(" Press Esc to cancel the reply first (or start the line with a space to send it as text).")
+      );
+      return;
+    }
+    if (this.pendingImages.length > 0 || this.loadImages(text).images.length > 0) {
+      this.print(style.yellow("Images can't be added while the agent works.") + style.gray(" Send them after the reply."));
+      return;
+    }
+    this.editor.addHistory(text);
+    this.editor.clear();
+    this.print(this.formatUser(text.trim()));
+    client.steer(text).catch((err) => {
+      if (!this.isClosed()) {
+        this.print(style.red(errorMessage(err)));
+      }
+    });
   }
 
   private cancelTurn(): void {
@@ -921,8 +974,16 @@ export class TerminalChat implements vscode.Pseudoterminal {
     }
     const frame = SPINNER[this.spinnerFrame++ % SPINNER.length];
     const secs = Math.floor((Date.now() - this.busySince) / 1000);
-    const hint = this.state === "busy" && !this.cancelled ? " · Esc to cancel" : "";
-    const text = truncate(`${this.spinnerLabel}… ${secs}s${hint}`, Math.max(10, this.cols - 4));
+    const busy = this.state === "busy" && !this.cancelled;
+    const hint = !busy ? "" : this.client?.hasQueuedSteers ? " · Esc removes your queued message" : " · Esc to cancel";
+    let text = `${this.spinnerLabel}… ${secs}s${hint}`;
+    // What is being typed for the agent (Enter sends it), the end of it if it's long.
+    const draft = busy ? this.editor.text.replace(/\s+/g, " ").trim() : "";
+    if (draft) {
+      const room = Math.max(0, this.cols - 4 - text.length - 12);
+      text += ` · Enter sends: ${room > 0 ? Array.from(draft).slice(-room).join("") : ""}`;
+    }
+    text = truncate(text, Math.max(10, this.cols - 4));
     this.write(term.clearLine + style.magenta(frame) + " " + style.gray(text));
     this.spinnerVisible = true;
   }
