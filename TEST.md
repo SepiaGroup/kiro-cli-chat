@@ -92,6 +92,12 @@ Then run **Developer: Reload Window**.
 - [ ] Turn the network off, send a prompt: the message says it is a network error and what to try.
 - [ ] Rate limit (only when it happens): a red line with the engine's message; the reply still finishes.
 
+### Stopping a reply (webview)
+- [ ] While the agent works, a Stop button (square) shows next to Send; it is hidden when idle. Click it: the label says "Stopping", then "■ Cancelled", and Stop disappears. The next message works.
+- [ ] Esc in the message box does the same. With the Settings or Resume panel open, Esc closes the panel first and does not stop the reply.
+- [ ] With Autopilot off, ask for a command that needs approval; while the approval card is open, press Stop. The card disappears with the reply; send another message and it works.
+- [ ] Send stays enabled during a reply (it steers). After a window reload mid-reply, Stop is shown again.
+
 ### Typing while the agent works
 - [ ] Ask for something slow (for example "run `sleep 20`, then say DONE"). While it runs, type "also end with the word BANANA" and press Enter. A line says it is queued, then that the agent has read it (after the command ends), and the reply includes BANANA.
 - [ ] Terminal: the text you type shows on the status line ("Enter sends: …"). Esc takes back a queued message ("message removed"); another Esc cancels the reply. `/help` mid-reply says commands can't run; dropping an image does too.

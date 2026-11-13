@@ -249,6 +249,8 @@ export class AcpClient extends EventEmitter {
     } finally {
       watchdog.stop();
       this.running = false;
+      // Nobody can answer approvals the turn left open (cancelled, or finished early).
+      this.pendingPermissions.clear();
       // The turn is over, so nobody is waiting for these any more.
       this.dropQuestions(false);
       // The engine carries unread steering into the turn, so what is left was lost.

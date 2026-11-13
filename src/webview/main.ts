@@ -4,7 +4,7 @@
 // of the UI is its own module.
 
 import type { ApprovalRequest, Question } from "../types";
-import { removeApprovalCard, renderApproval } from "./approvalCard";
+import { removeAllApprovalCards, removeApprovalCard, renderApproval } from "./approvalCard";
 import { removeQuestionCard, renderQuestion } from "./questionCard";
 import { showSteer } from "./steerNotes";
 import { clearAttachments, currentAttachments, initDropAndPaste, insertPaths, pushAttachment } from "./attachments";
@@ -27,6 +27,7 @@ import { addSystem, autoGrow, byId, div, hidePanels, inputEl, messagesEl, scroll
 
 const statusEl = byId("status");
 const sendBtn = byId("btn-send");
+const stopBtn = byId("btn-stop");
 
 // --- send / input handling ---
 
@@ -74,6 +75,18 @@ function steer(text: string, attachmentCount: number): void {
 
 sendBtn.addEventListener("click", send);
 
+/** Stop the reply (the terminal chat's Esc). The engine ends the turn; runFinished follows. */
+function cancelReply(): void {
+  if (!state.busy || stopBtn.hasAttribute("disabled")) {
+    return;
+  }
+  stopBtn.toggleAttribute("disabled", true);
+  setWorkingLabel("Stopping");
+  vscode.postMessage({ type: "cancelTurn" });
+}
+
+stopBtn.addEventListener("click", cancelReply);
+
 inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
   // The command picker intercepts navigation keys when open.
   if (handlePickerKeydown(e)) {
@@ -109,7 +122,12 @@ initContextCard();
 // Esc closes open panels.
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    // Esc in the message box stops the reply, unless it is closing a panel or the picker first.
+    const panelOpen = document.querySelector(".settings:not(.hidden), .resume-panel:not(.hidden), .ctx-card:not(.hidden)");
     hidePanels();
+    if (!panelOpen && !e.defaultPrevented && e.target === inputEl) {
+      cancelReply();
+    }
   }
 });
 
@@ -226,7 +244,7 @@ function handleEvent(ev: ChatEventLike): void {
       appendAssistant(String(ev.text ?? ""));
       break;
     case "thinking":
-      if (state.busy) {
+      if (state.busy && !stopBtn.hasAttribute("disabled")) {
         setWorkingLabel("Thinking");
       }
       break;
@@ -286,6 +304,10 @@ function handleEvent(ev: ChatEventLike): void {
       break;
     case "runFinished":
       finalizeAssistant();
+      removeAllApprovalCards();
+      if (ev.status === "cancelled") {
+        addSystem("■ Cancelled", "");
+      }
       setBusy(false);
       break;
     case "turnCompletion":
@@ -322,8 +344,10 @@ function setStatus(text: string): void {
 
 function setBusy(b: boolean): void {
   state.busy = b;
-  sendBtn.toggleAttribute("disabled", b);
-  sendBtn.classList.toggle("busy", b);
+  // Send stays on while the agent works: it steers the reply. Stop ends it.
+  sendBtn.title = b ? "Send to the agent now (Enter)" : "Send (Enter)";
+  stopBtn.classList.toggle("hidden", !b);
+  stopBtn.toggleAttribute("disabled", false);
   // Keep the hover card's Compact button in step with the reply state.
   refreshCtxCard();
   if (b) {

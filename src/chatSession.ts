@@ -127,6 +127,9 @@ export class ChatSession {
       case "sendPrompt":
         await this.handlePrompt(String(msg.text ?? ""), sanitizeImages(msg.images));
         break;
+      case "cancelTurn":
+        this.cancelTurn();
+        break;
       case "approve":
         this.handleApproval(String(msg.toolCallId ?? ""), {
           optionId: String(msg.optionId ?? ""),
@@ -215,6 +218,15 @@ export class ChatSession {
       }
     } catch (err) {
       this.post({ type: "error", message: describeError(errorMessage(err), "Kiro CLI Chat: Log In") });
+    }
+  }
+
+  /** Stop the reply that is running (the engine ends the turn as cancelled). */
+  private cancelTurn(): void {
+    if (this.transport?.mode === "persistent") {
+      this.transport.client.cancel();
+    } else if (this.transport?.mode === "one-shot") {
+      this.transport.runner.cancel();
     }
   }
 
@@ -777,6 +789,9 @@ export class ChatSession {
       this.log(`[post] ${m.type}`);
     }
     this.transcript.record(msg);
+    if (m?.type === "event" && m.event?.kind === "runFinished") {
+      this.pendingApprovals.clear(); // the reply is over; the webview drops the cards
+    }
     if (m?.type === "event" && m.event?.kind === "approvalResolved") {
       // Answered by a rule: nothing left to answer.
       this.pendingApprovals.delete((m.event as { toolCallId?: string }).toolCallId ?? "");

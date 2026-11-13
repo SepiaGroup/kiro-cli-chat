@@ -485,3 +485,32 @@ test("the engine's rate-limit notification shows as an error notice and does not
     c.dispose();
   }
 });
+
+test("cancelling a reply that waits on an approval ends it and forgets the approval", async () => {
+  const cli = fakeEngine(
+    "cancel-approval",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      const g = globalThis;
+      if (msg.method === "session/prompt") {
+        g.promptId = msg.id;
+        send({ id: "p-1", method: "session/request_permission", params: { sessionId: "s1", toolCall: { toolCallId: "t1", title: "Run find ." }, options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "deny", name: "Deny", kind: "reject_once" }] } });
+      }
+      if (msg.method === "session/cancel") send({ id: g.promptId, result: { stopReason: "cancelled" } });
+    }`
+  );
+  const { c, events } = client(cli);
+  const pending = c as unknown as { pendingPermissions: Map<unknown, unknown> };
+  try {
+    await c.start();
+    const turn = c.prompt("work");
+    await eventually("the approval", () => pending.pendingPermissions.size === 1);
+    c.cancel();
+    await turn;
+    assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "cancelled"));
+    assert.equal(pending.pendingPermissions.size, 0);
+    assert.equal(c.turnRunning, false);
+  } finally {
+    c.dispose();
+  }
+});
