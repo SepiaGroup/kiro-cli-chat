@@ -20,11 +20,12 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In Restricted Mode, workspace values for kiroCliChat.autopilot, kiroCliChat.defaultEngine and kiroCliChat.interactionMode are ignored. kiroCliChat.kiroCliPath is never read from workspace settings.",
+      "description": "In Restricted Mode, workspace values for kiroCliChat.autopilot, kiroCliChat.defaultEngine, kiroCliChat.interactionMode and kiroCliChat.shareEditorContext are ignored. kiroCliChat.kiroCliPath is never read from workspace settings.",
       "restrictedConfigurations": [
         "kiroCliChat.autopilot",
         "kiroCliChat.defaultEngine",
-        "kiroCliChat.interactionMode"
+        "kiroCliChat.interactionMode",
+        "kiroCliChat.shareEditorContext"
       ]
     }
   },
@@ -177,6 +178,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "When off (default), run in **Supervised** mode: the agent asks for approval before file changes. When on, tools run without confirmation."
+        },
+        "kiroCliChat.shareEditorContext": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Tell the agent which files are open in the editor and which one is active (paths only, files inside the chat's folder only). Off by default."
         },
         "kiroCliChat.enterToSend": {
           "type": "boolean",

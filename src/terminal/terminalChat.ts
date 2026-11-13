@@ -7,7 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { AcpClient } from "../acpClient";
-import { readConfig } from "../config";
+import { editorContextFor, readConfig } from "../config";
 import { NotLoggedInError, prepareEngine, resetPreparedEngine } from "../enginePrep";
 import { errorMessage, formatDuration } from "../format";
 import { AvailableCommand, ChatEvent, PromptImage } from "../types";
@@ -231,6 +231,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
         model: cfg.model,
         cwd: this.cwd(),
         trustAllTools: cfg.autopilot,
+        editorContext: editorContextFor(this.cwd()),
       });
       this.wire(client);
       await client.start();

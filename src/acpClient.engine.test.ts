@@ -58,7 +58,7 @@ async function eventually(what: string, cond: () => boolean, ms = 3000): Promise
 function client(
   cliPath: string,
   timeoutsMs?: Record<string, number>,
-  extra: { initialResponseTimeoutMs?: number } = {}
+  extra: { initialResponseTimeoutMs?: number; editorContext?: () => { active?: string; open: string[] } } = {}
 ): { c: AcpClient; events: ChatEvent[]; logs: string[] } {
   const c = new AcpClient({ cliPath, engine: "v3", cwd: dir, timeoutsMs, ...extra });
   const events: ChatEvent[] = [];
@@ -295,6 +295,49 @@ test("any sign of life from the engine ends the first-reply limit", async () => 
     await c.prompt("hi");
     assert.deepEqual(chunks(events), ["thinking"]);
     assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "success"));
+  } finally {
+    c.dispose();
+  }
+});
+
+test("open editor files go in as a context item, only when they changed", async () => {
+  const cli = fakeEngine(
+    "editor",
+    `(msg, send, ask) => {
+      (${BASIC})(msg, send, ask);
+      if (msg.method === "session/prompt") {
+        (${SAY})(send, JSON.stringify(msg.params.prompt.filter((b) => b.type === "resource")));
+        send({ id: msg.id, result: { stopReason: "end_turn" } });
+      }
+    }`
+  );
+  let ctx: { active?: string; open: string[] } = { active: dir + "/a.ts", open: [dir + "/a.ts", dir + "/b.md"] };
+  const { c, events } = client(cli, undefined, { editorContext: () => ctx });
+  const sent = (): unknown[] => JSON.parse(chunks(events).at(-1) ?? "null");
+  const notices = (): string[] => events.flatMap((e) => (e.kind === "notice" ? [e.text] : []));
+  try {
+    await c.start();
+    await c.prompt("one");
+    assert.deepEqual(sent(), [
+      {
+        type: "resource",
+        resource: {
+          uri: "vscode-editor-context",
+          mimeType: "text/plain",
+          text: "Editor context from the user's VS Code (paths relative to the workspace folder). It is current; an engine note saying no files are open can't see the editor.\nActive file: a.ts\nOpen files:\n- a.ts\n- b.md",
+        },
+      },
+    ]);
+    assert.deepEqual(notices(), ["Sent editor context: active a.ts, 2 open files."]);
+    await c.prompt("two"); // unchanged: not sent again
+    assert.deepEqual(sent(), []);
+    ctx = { open: [dir + "/b.md"] };
+    await c.prompt("three");
+    assert.equal((sent() as Array<{ resource: { text: string } }>)[0].resource.text.includes("Active file: none"), true);
+    ctx = { open: [] }; // nothing open: nothing to say
+    await c.prompt("four");
+    assert.deepEqual(sent(), []);
+    assert.equal(notices().length, 2);
   } finally {
     c.dispose();
   }

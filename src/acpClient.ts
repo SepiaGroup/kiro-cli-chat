@@ -2,6 +2,7 @@
 // Spawns `kiro-cli acp` and speaks JSON-RPC 2.0 over stdio (newline-delimited).
 // stdout = JSON-RPC; stderr = logs. Node-only (child_process); no vscode import.
 
+import { EditorSnapshot, editorContextNotice, editorContextText } from "./editorContext";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { EventEmitter } from "events";
 import { JsonLineParser, lineSplitter } from "./jsonLineParser";
@@ -23,6 +24,11 @@ export interface AcpClientOptions {
   timeoutsMs?: Record<string, number>;
   /** Override how long a prompt may get no reply at all before it's cancelled (tests). */
   initialResponseTimeoutMs?: number;
+  /**
+   * The editor's open and active files, added to a prompt as a context item
+   * when they changed since the last prompt. Leave out to send nothing.
+   */
+  editorContext?: () => EditorSnapshot;
 }
 
 type PendingResolver = {
@@ -67,6 +73,8 @@ export class AcpClient extends EventEmitter {
   private pendingPermissions = new Map<RpcId, ApprovalRequest>();
   /** Questions from the agent waiting for an answer, by JSON-RPC id. */
   private pendingQuestions = new Map<RpcId, Question>();
+  /** What the model was last told about the editor (so an unchanged editor isn't resent every turn). */
+  private lastEditorContext?: string;
   /** Set while a prompt runs: called for every sign of life from the engine. */
   private onActivity?: () => void;
   private readonly stderrTail: string[] = [];
@@ -220,6 +228,7 @@ export class AcpClient extends EventEmitter {
     for (const img of images) {
       prompt.push({ type: "image", mimeType: img.mimeType, data: img.data });
     }
+    this.addEditorContext(prompt);
     // Always report the end of the turn, so the UI leaves its busy state.
     let status = "error";
     let stopReason: string | undefined;
@@ -236,6 +245,21 @@ export class AcpClient extends EventEmitter {
       this.dropQuestions(false);
       this.emit("event", { kind: "runFinished", status, ...(stopReason ? { stopReason } : {}) } as ChatEvent);
     }
+  }
+
+  /** The editor's files as a context item, only when they differ from what the model was last told. */
+  private addEditorContext(prompt: Array<Record<string, unknown>>): void {
+    if (!this.opts.editorContext) {
+      return;
+    }
+    const snap = this.opts.editorContext();
+    const text = editorContextText(snap, this.opts.cwd);
+    if (!text || text === this.lastEditorContext) {
+      return;
+    }
+    this.lastEditorContext = text;
+    prompt.push({ type: "resource", resource: { uri: "vscode-editor-context", mimeType: "text/plain", text } });
+    this.emit("event", { kind: "notice", text: editorContextNotice(snap, this.opts.cwd) } as ChatEvent);
   }
 
   /**

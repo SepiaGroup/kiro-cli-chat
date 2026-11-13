@@ -4,7 +4,7 @@
 import * as vscode from "vscode";
 import { AcpClient } from "./acpClient";
 import { OneShotRunner } from "./oneShotRunner";
-import { readConfig } from "./config";
+import { editorContextFor, readConfig } from "./config";
 import {
   checkAuth,
   listModels,
@@ -396,6 +396,7 @@ export class ChatSession {
           model: cfg.model,
           cwd,
           trustAllTools: cfg.autopilot,
+          editorContext: editorContextFor(cwd),
         });
         this.wireClient(client);
         try {
