@@ -12,15 +12,18 @@ npm run lint      # eslint, must report nothing
 npm test          # builds dist-test/ and runs node --test
 ```
 
-All three must exit 0. The tests cover the event mapper, JSON line parser,
-markdown (HTML and ANSI), line diff, line editor, slash-command parsing and
-menu, image-path detection, and the chat-tab manager (with a fake `vscode`).
+All three must exit 0. The tests cover the event mapper, approval rules,
+JSON line parser, markdown (HTML and ANSI), line diff, line editor,
+slash-command parsing and menu, image-path detection, the chat-tab manager
+(with a fake `vscode`), and `AcpClient` against a fake engine process
+(handshake, timeouts, cancelled turns, unknown requests, the engine dying).
+CI (`.github/workflows/ci.yml`) runs them plus `npm run package` on every
+push and pull request.
 
 ## Install
 
 ```sh
-npm run build
-npx @vscode/vsce package --no-dependencies
+npm run package   # builds and writes kiro-cli-chat-<version>.vsix
 code --install-extension kiro-cli-chat-0.1.0.vsix --force
 ```
 
@@ -29,9 +32,9 @@ Then run **Developer: Reload Window**.
 ## Manual checks
 
 ### Opening chats
-- [ ] `Cmd+Shift+K` and the **Kiro Chat** status-bar item open a chat tab.
+- [ ] `Cmd+Alt+K` and the **Kiro Chat** status-bar item open a chat tab. `Cmd+Shift+K` still deletes the line in an editor.
 - [ ] With `openIn` = `panel`, they open the bottom-panel chat instead.
-- [ ] Pressing `Cmd+Shift+K` again brings the same tab forward; it doesn't open another.
+- [ ] Pressing `Cmd+Alt+K` again brings the same tab forward; it doesn't open another.
 - [ ] ＋ (right of Restart) and **New Chat Tab** open "Kiro Chat 2", "Kiro Chat 3", …
 - [ ] A prompt in one tab gets its reply only in that tab. The panel chat is separate too.
 - [ ] Closing a tab stops its engine (`pgrep -fl "kiro-cli.*acp"` count drops).
@@ -101,3 +104,12 @@ Then run **Developer: Reload Window**.
 ### Startup errors
 - [ ] With an invalid `kiroCliPath`, the chat shows a clear error.
 - [ ] Logged out (`kiro-cli logout`), the chat offers a login button.
+
+### Untrusted workspaces
+- [ ] Open a folder whose `.vscode/settings.json` sets `kiroCliChat.kiroCliPath` and `kiroCliChat.autopilot: true`. VS Code reports `kiroCliPath` as a machine setting that a workspace can't set; the chat uses the user-level path.
+- [ ] Choose "Don't Trust" (Restricted Mode): the chat still works, and approvals are still asked (the workspace `autopilot` is ignored).
+
+### Engine failures
+- [ ] Set `kiroCliChat.kiroCliPath` to a file that doesn't exist → the chat says the setting points to a missing file.
+- [ ] Start a long reply, then `pkill -f "kiro-cli-chat acp"` → the chat says the engine exited, leaves the busy state, and Restart works.
+- [ ] Esc / Stop during a reply → the terminal footer shows "■ Cancelled".

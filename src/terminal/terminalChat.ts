@@ -15,6 +15,7 @@ import {
   ApprovalAnswer,
   ApprovalOption,
   ApprovalRequest,
+  RpcId,
   AvailableCommand,
   ChatEvent,
   ConfigOption,
@@ -59,7 +60,7 @@ interface ToolState {
  */
 interface PendingApproval {
   request: ApprovalRequest;
-  requestId?: number;
+  requestId?: RpcId;
   page: "main" | "allow" | "deny" | "folder" | "reason";
   input: string;
   /** Characters on screen for the input line, to redraw it. */
@@ -510,7 +511,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     this.approvalQueue = [];
   }
 
-  private queueApproval(request: ApprovalRequest, requestId?: number): void {
+  private queueApproval(request: ApprovalRequest, requestId?: RpcId): void {
     const pending: PendingApproval = { request, requestId, page: "main", input: "", drawn: 0 };
     if (this.approval) {
       this.approvalQueue.push(pending);

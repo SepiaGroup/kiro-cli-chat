@@ -4,6 +4,8 @@ import type { ApprovalRule, RuleKind } from "./approvalRules";
 export type { ApprovalRule, RuleKind } from "./approvalRules";
 
 export type EngineVersion = "v1" | "v2" | "v3";
+/** A JSON-RPC request id (the engine's own requests may use either). */
+export type RpcId = number | string;
 export type EngineSetting = "auto" | EngineVersion;
 export type InteractionMode = "persistent" | "one-shot";
 
@@ -55,9 +57,9 @@ export type ChatEvent =
   | { kind: "toolCall"; toolCallId: string; title: string; toolKind?: string; paths?: string[]; startLine?: number; diff?: ToolDiff }
   | { kind: "toolUpdate"; toolCallId: string; status: string; output?: string; diff?: ToolDiff; startLine?: number }
   /** `requestId` is the engine's JSON-RPC id, for answering (ACP only). */
-  | { kind: "approvalRequest"; request: ApprovalRequest; requestId?: number }
+  | { kind: "approvalRequest"; request: ApprovalRequest; requestId?: RpcId }
   /** A waiting approval was answered by a rule just created (no card needed). */
-  | { kind: "approvalResolved"; toolCallId: string; requestId: number; allowed: boolean; label: string }
+  | { kind: "approvalResolved"; toolCallId: string; requestId: RpcId; allowed: boolean; label: string }
   | { kind: "contextUsage"; usagePercentage: number; usedTokens?: number; threshold?: number }
   | { kind: "metering"; credits: number }
   /** The engine's id for the user message just sent (used by /rewind). */

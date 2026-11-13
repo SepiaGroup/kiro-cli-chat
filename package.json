@@ -1,7 +1,7 @@
 {
   "name": "kiro-cli-chat",
   "displayName": "Kiro CLI Chat",
-  "description": "Chat with the Kiro CLI v3 agent engine in VS Code editor tabs, the panel, or the terminal — works on Macs without AVX/AVX2 by driving the headless ACP engine instead of the AVX-only TUI.",
+  "description": "Chat with the Kiro CLI agent in VS Code on Macs without AVX/AVX2. Uses the headless v3 engine instead of the AVX-only terminal UI.",
   "version": "0.1.0",
   "publisher": "SepiaGroup",
   "license": "MIT",
@@ -16,6 +16,17 @@
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.98.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode, workspace values for kiroCliChat.autopilot, kiroCliChat.defaultEngine and kiroCliChat.interactionMode are ignored. kiroCliChat.kiroCliPath is never read from workspace settings.",
+      "restrictedConfigurations": [
+        "kiroCliChat.autopilot",
+        "kiroCliChat.defaultEngine",
+        "kiroCliChat.interactionMode"
+      ]
+    }
   },
   "categories": [
     "Chat",
@@ -105,8 +116,8 @@
     "keybindings": [
       {
         "command": "kiroCliChat.open",
-        "key": "ctrl+shift+k",
-        "mac": "cmd+shift+k"
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
       },
       {
         "key": "shift+enter",
@@ -131,23 +142,22 @@
             "Open the chat in the panel/side bar view (wherever you've moved it)."
           ],
           "default": "editor",
-          "markdownDescription": "Where **Open Chat** (`Cmd/Ctrl+Shift+K`, status bar) opens the chat. Each chat tab and the panel view is its own conversation."
+          "markdownDescription": "Where **Open Chat** (`Cmd+Alt+K / Ctrl+Alt+K`, status bar) opens the chat. Each chat tab and the panel view is its own conversation."
         },
         "kiroCliChat.kiroCliPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `kiro-cli` binary. Leave empty to auto-detect (`kiro-cli` on PATH, then `~/.local/bin/kiro-cli`)."
+          "markdownDescription": "Absolute path to the `kiro-cli` binary. Leave empty to auto-detect (`kiro-cli` on PATH, then `~/.local/bin/kiro-cli`).",
+          "scope": "machine"
         },
         "kiroCliChat.defaultEngine": {
           "type": "string",
           "enum": [
             "auto",
-            "v1",
-            "v2",
             "v3"
           ],
           "default": "auto",
-          "markdownDescription": "Agent engine to use. `auto` selects the newest engine that runs without AVX (detected at runtime). Pin a specific `vN` to override."
+          "markdownDescription": "Agent engine to use. `auto` checks which engine runs on this machine (v3 today) and remembers it. The extension needs v3."
         },
         "kiroCliChat.defaultModel": {
           "type": "string",
@@ -207,6 +217,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "node esbuild.js --production",
+    "build:dev": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "compile": "tsc --noEmit",
     "lint": "eslint src",
@@ -216,11 +227,12 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
-    "@types/node": "^22.0.0",
-    "@types/vscode": "^1.98.0",
-    "esbuild": "^0.24.0",
-    "eslint": "^9.0.0",
-    "typescript": "^5.6.0",
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.98.0",
+    "@vscode/vsce": "4.1.0",
+    "esbuild": "0.24.2",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
     "typescript-eslint": "8.72.2"
   }
 }

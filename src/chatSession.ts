@@ -11,9 +11,12 @@ import {
   listSessions,
   resolveEngine,
 } from "./detect";
+import * as path from "path";
 import { resolveCliPath } from "./cli";
+import { imageMimeForPath, sniffImageMime } from "./terminal/imagePaths";
+import { resetPreparedEngine } from "./enginePrep";
 import { isRuleKind } from "./approvalRules";
-import { ApprovalAnswer, ChatEvent, EngineVersion, PromptImage } from "./types";
+import { ApprovalAnswer, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
 
 type Transport =
   | { mode: "persistent"; client: AcpClient }
@@ -37,7 +40,7 @@ export class ChatSession {
   // Session to reopen on first start (a tab restored after a window reload).
   private resumeSessionId?: string;
   // Map ACP server-request id -> approval toolCallId, for persistent mode.
-  private pendingApprovals = new Map<string, number>();
+  private pendingApprovals = new Map<string, RpcId>();
   // Transcript + latest state snapshots, replayed into a re-created webview.
   private transcript: unknown[] = [];
   private lastReady?: unknown;
@@ -462,7 +465,7 @@ export class ChatSession {
   private wireClient(client: AcpClient): void {
     client.on("event", (ev: ChatEvent) => this.post({ type: "event", event: ev }));
     client.on("log", (line: string) => this.log("[acp] " + line));
-    client.on("permissionRequest", (requestId: number, params: unknown) => {
+    client.on("permissionRequest", (requestId: RpcId, params: unknown) => {
       const p = (params ?? {}) as Record<string, unknown>;
       const toolCall = (p.toolCall ?? {}) as Record<string, unknown>;
       const toolCallId = String(toolCall.toolCallId ?? p.toolCallId ?? "");
@@ -619,12 +622,20 @@ export class ChatSession {
 
   async restart(): Promise<void> {
     this.disposeTransport();
+    // Detect the engine again (kiro-cli may have been updated).
+    resetPreparedEngine();
     this.post({ type: "cleared" });
     await this.ensureStarted();
   }
 
   private async runLogin(): Promise<void> {
-    const cliPath = this.cliPath ?? resolveCliPath(readConfig().cliPath);
+    let cliPath = this.cliPath;
+    try {
+      cliPath ??= resolveCliPath(readConfig().cliPath);
+    } catch (err) {
+      this.post({ type: "fatal", message: errorMessage(err) });
+      return;
+    }
     if (!cliPath) {
       return;
     }
@@ -667,8 +678,8 @@ export class ChatSession {
   /** Read image files from disk and hand them to the webview as attachments. */
   private async attachImagePaths(paths: string[]): Promise<void> {
     for (const p of paths.slice(0, MAX_IMAGES)) {
-      const mimeType = imageMimeForPath(p);
-      if (!mimeType) {
+      // Only absolute paths to image files (what a drop or the picker gives).
+      if (!imageMimeForPath(p) || !path.isAbsolute(p)) {
         continue;
       }
       try {
@@ -682,6 +693,11 @@ export class ChatSession {
           continue;
         }
         const bytes = await vscode.workspace.fs.readFile(uri);
+        const mimeType = sniffImageMime(bytes);
+        if (!mimeType) {
+          this.post({ type: "notice", text: `${p} isn't a PNG, JPEG, GIF or WebP image.`, isError: true });
+          continue;
+        }
         this.post({
           type: "attachImage",
           name: p.split(/[\\/]/).pop() ?? "image",
@@ -806,19 +822,6 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGES = 10;
 const MAX_TRANSCRIPT = 20000;
 
-const IMAGE_MIME_BY_EXT: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-};
-
-function imageMimeForPath(p: string): string | undefined {
-  const ext = p.split(".").pop()?.toLowerCase() ?? "";
-  return IMAGE_MIME_BY_EXT[ext];
-}
-
 /** Validate image attachments posted by the webview before forwarding them. */
 function sanitizeImages(raw: unknown): PromptImage[] {
   if (!Array.isArray(raw)) {
@@ -886,7 +889,7 @@ function getHtml(context: vscode.ExtensionContext, webview: vscode.Webview): str
   const csp = [
     `default-src 'none'`,
     `img-src ${webview.cspSource} data:`,
-    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `style-src ${webview.cspSource}`,
     `script-src 'nonce-${nonce}'`,
   ].join("; ");
 

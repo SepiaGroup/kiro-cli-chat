@@ -4,11 +4,11 @@
 
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { EventEmitter } from "events";
-import { JsonLineParser } from "./jsonLineParser";
+import { JsonLineParser, lineSplitter } from "./jsonLineParser";
 import { mapPermissionRequest, mapSessionUpdate } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
 import { checkFolder, cleanReason, folderResource, isShell } from "./approvalRules";
-import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage } from "./types";
+import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
 
 export interface AcpClientOptions {
   cliPath: string;
@@ -16,6 +16,8 @@ export interface AcpClientOptions {
   model?: string;
   cwd: string;
   trustAllTools?: boolean;
+  /** Override request timeouts (tests). */
+  timeoutsMs?: Record<string, number>;
 }
 
 type PendingResolver = {
@@ -24,22 +26,32 @@ type PendingResolver = {
 };
 
 /**
- * Minimal ACP client. Emits:
- *  - "event"  (ChatEvent) for normalized chat events
- *  - "log"    (string)    for stderr lines
- *  - "exit"   (code)      when the process exits
- *  - "notification" (method, params) for unmapped JSON-RPC notifications
+ * Timeouts for requests that should answer quickly. `session/prompt` has none
+ * (a turn can run for a long time); extension methods like compaction can
+ * also be slow and have none. Generous because older Macs start slowly.
  */
+const TIMEOUTS_MS: Record<string, number> = {
+  initialize: 120_000,
+  "session/new": 120_000,
+  "session/load": 180_000,
+  "session/set_mode": 30_000,
+  "session/set_config_option": 30_000,
+};
+
+/** How long to wait after SIGTERM before SIGKILL on dispose. */
+const KILL_AFTER_MS = 3000;
+
 export class AcpClient extends EventEmitter {
   private child?: ChildProcessWithoutNullStreams;
   private readonly parser = new JsonLineParser();
   private nextId = 1;
   private readonly pending = new Map<number, PendingResolver>();
+  private exited = false;
   private sessionId?: string;
   private initialized = false;
   private autoApprove = false;
   /** Permission requests waiting for an answer, by JSON-RPC id. */
-  private pendingPermissions = new Map<number, ApprovalRequest>();
+  private pendingPermissions = new Map<RpcId, ApprovalRequest>();
   private readonly stderrTail: string[] = [];
 
   constructor(private readonly opts: AcpClientOptions) {
@@ -85,25 +97,34 @@ export class AcpClient extends EventEmitter {
     this.child.stderr.setEncoding("utf8");
 
     this.child.stdout.on("data", (chunk: string) => this.onStdout(chunk));
-    this.child.stderr.on("data", (chunk: string) => {
-      for (const line of chunk.split("\n")) {
-        if (line.trim()) {
-          this.stderrTail.push(line);
-          if (this.stderrTail.length > 40) {
-            this.stderrTail.shift();
-          }
-          this.emit("log", line);
+    const stderr = lineSplitter((line) => {
+      if (line.trim()) {
+        this.stderrTail.push(line);
+        if (this.stderrTail.length > 40) {
+          this.stderrTail.shift();
         }
+        this.emit("log", line);
       }
     });
+    this.child.stderr.on("data", (chunk: string) => stderr.push(chunk));
+    // Writing to an engine that just died raises EPIPE here; without a
+    // handler it would be an uncaught exception in the extension host.
+    this.child.stdin.on("error", (err) => this.emit("log", `stdin error: ${err.message}`));
     this.child.on("exit", (code) => {
+      this.exited = true;
+      stderr.flush();
       const detail = this.stderrTail.slice(-6).join(" | ");
       this.rejectAllPending(
         new Error(`kiro-cli acp exited (code=${code})${detail ? " — " + detail : ""}`)
       );
       this.emit("exit", code);
     });
-    this.child.on("error", (err) => this.emit("log", `spawn error: ${err.message}`));
+    this.child.on("error", (err) => {
+      // E.g. ENOENT: the binary can't be started. "exit" may not follow.
+      this.exited = true;
+      this.emit("log", `spawn error: ${err.message}`);
+      this.rejectAllPending(new Error(`Couldn't start ${this.opts.cliPath}: ${err.message}`));
+    });
 
     // ACP initialize handshake.
     const initResult = await this.request("initialize", {
@@ -168,8 +189,18 @@ export class AcpClient extends EventEmitter {
     for (const img of images) {
       prompt.push({ type: "image", mimeType: img.mimeType, data: img.data });
     }
-    await this.request("session/prompt", { sessionId: this.sessionId, prompt });
-    this.emit("event", { kind: "runFinished", status: "success" } as ChatEvent);
+    // Always report the end of the turn, so the UI leaves its busy state.
+    let status = "error";
+    let stopReason: string | undefined;
+    try {
+      const res = (await this.request("session/prompt", { sessionId: this.sessionId, prompt })) as
+        | { stopReason?: unknown }
+        | undefined;
+      stopReason = typeof res?.stopReason === "string" ? res.stopReason : undefined;
+      status = stopReason === "cancelled" ? "cancelled" : stopReason === "refusal" ? "error" : "success";
+    } finally {
+      this.emit("event", { kind: "runFinished", status, ...(stopReason ? { stopReason } : {}) } as ChatEvent);
+    }
   }
 
   /**
@@ -191,7 +222,7 @@ export class AcpClient extends EventEmitter {
    * After an entire-tool rule, approvals already waiting for the same tool
    * are answered too (the engine doesn't re-check them).
    */
-  respondToApproval(requestId: number, answer: string | ApprovalAnswer): void {
+  respondToApproval(requestId: RpcId, answer: string | ApprovalAnswer): void {
     const a: ApprovalAnswer = typeof answer === "string" ? { optionId: answer } : answer;
     const req = this.pendingPermissions.get(requestId);
     const kind = req?.options.find((o) => o.optionId === a.optionId)?.kind ?? "";
@@ -285,8 +316,19 @@ export class AcpClient extends EventEmitter {
   dispose(): void {
     this.pendingPermissions.clear();
     this.rejectAllPending(new Error("disposed"));
-    this.child?.kill("SIGTERM");
+    const child = this.child;
     this.child = undefined;
+    if (child && !this.exited) {
+      child.kill("SIGTERM");
+      // Don't leave an engine behind if it ignores SIGTERM.
+      const timer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, KILL_AFTER_MS);
+      timer.unref();
+      child.once("exit", () => clearTimeout(timer));
+    }
   }
 
   // --- internals ---
@@ -325,7 +367,7 @@ export class AcpClient extends EventEmitter {
     }
 
     // Server-initiated request (e.g. permission prompt) — has id + method.
-    if (typeof m.id === "number" && typeof m.method === "string") {
+    if ((typeof m.id === "number" || typeof m.id === "string") && typeof m.method === "string") {
       this.handleServerRequest(m.id, m.method, m.params);
       return;
     }
@@ -336,7 +378,7 @@ export class AcpClient extends EventEmitter {
     }
   }
 
-  private handleServerRequest(id: number, method: string, params: unknown): void {
+  private handleServerRequest(id: RpcId, method: string, params: unknown): void {
     if (method === "session/request_permission") {
       const request = mapPermissionRequest(params);
       const mapped = request.options;
@@ -359,8 +401,10 @@ export class AcpClient extends EventEmitter {
       this.emit("permissionRequest", id, params);
       return;
     }
-    // Unknown server request: respond with empty result to avoid stalling.
-    this.sendResponse(id, {});
+    // Not something this client implements (we advertise no fs/terminal
+    // capabilities): answer "method not found" so the engine doesn't wait.
+    this.emit("log", `unsupported engine request: ${method}`);
+    this.write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
   }
 
   private handleNotification(method: string, params: unknown): void {
@@ -387,20 +431,45 @@ export class AcpClient extends EventEmitter {
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      if (!this.canWrite()) {
+        reject(new Error("The Kiro engine isn't running."));
+        return;
+      }
+      const ms = this.opts.timeoutsMs?.[method] ?? TIMEOUTS_MS[method];
+      const timer = ms
+        ? setTimeout(() => {
+            if (this.pending.delete(id)) {
+              reject(new Error(`The Kiro engine didn't answer ${method} within ${Math.round(ms / 1000)}s.`));
+            }
+          }, ms)
+        : undefined;
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
       this.write(payload);
     });
   }
 
-  private sendResponse(id: number, result: unknown): void {
+  private sendResponse(id: RpcId, result: unknown): void {
     this.write({ jsonrpc: "2.0", id, result });
   }
 
+  private canWrite(): boolean {
+    return !!this.child && !this.exited && this.child.stdin.writable;
+  }
+
   private write(obj: unknown): void {
-    if (!this.child) {
+    if (!this.canWrite()) {
       return;
     }
-    this.child.stdin.write(JSON.stringify(obj) + "\n");
+    this.child?.stdin.write(JSON.stringify(obj) + "\n");
   }
 
   private rejectAllPending(err: Error): void {

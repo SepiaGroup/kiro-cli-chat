@@ -81,15 +81,9 @@ module.
 7. Closing a tab disposes its session and kills its engine. The conversation
    stays on disk and appears under Resume.
 
-Messages the webview sends: `ready`, `sendPrompt`, `approve`, `newSession`,
-`resumeSession`, `loadSession`, `restart`, `newTab`, `setMode`, `setConfig`,
-`login`, `getContextBreakdown`, `compact`, `attachPaths`, `pickAttachment`,
-`debugLog`.
-
-Messages it receives: `status`, `ready`, `needLogin`, `fatal`, `error`,
-`notice`, `event`, `cleared`, `restarting`, `userMessage`, `sessionList`,
-`sessionListLoading`, `contextBreakdown`, `compactDone`, `attachImage`,
-`insertPaths`, `openResume`.
+The webview's messages are handled in `ChatSession.handleMessage` (the
+`switch` on `msg.type`) and `webview/main.ts` (the `message` listener); those
+are the source of truth for the message names.
 
 ## Terminal chat
 
@@ -113,8 +107,15 @@ Transport:
   `session/update` notifications before it returns, so the UI is cleared first.
   Loading an unknown session ID doesn't fail; the client then has an empty
   session.
-- `session/prompt` resolves when the turn ends. `session/cancel` (a
-  notification) stops it with `stopReason: "cancelled"`.
+- `session/prompt` resolves when the turn ends with a `stopReason`
+  (`end_turn`, `cancelled`, `refusal`, …); the client reports it in
+  `runFinished` and always emits `runFinished`, also when the request fails.
+  `session/cancel` (a notification) stops it with `stopReason: "cancelled"`.
+- Request timeouts: `initialize`/`session/new` 120 s, `session/load` 180 s,
+  `set_mode`/`set_config_option` 30 s. `session/prompt` and extension methods
+  have none. `dispose()` sends SIGTERM, then SIGKILL after 3 s.
+- The client advertises no `fs` or `terminal` capabilities, so the engine
+  uses its own. Any other engine request gets JSON-RPC `-32601`.
 - `session/set_mode` switches mode (vibe/plan/…). `session/set_config_option`
   sets `model`, `autopilot` (`on`/`off`), `effortLevel`, `memoryReflection`,
   `contentCollection`. Setting `model` to an invalid name isn't rejected.
@@ -196,12 +197,26 @@ Context breakdown (`_kiro/session/context` `show`):
 Other CLI calls (`detect.ts`):
 - `kiro-cli whoami --format json` — login check.
 - `kiro-cli chat --help` — lists engines. Each is health-checked headless,
-  newest first; the result is cached.
+  newest first; the result is cached per binary for all chats until Restart.
+  If none runs, start fails with an error (no fallback).
 - `kiro-cli chat --list-models --format json` — models (`model_id`, context
   window, rate multiplier).
 - `kiro-cli chat --list-sessions --format json` — sessions for Resume
   (filtered to this engine and folder, newest first).
 - `kiro-cli login` runs in an integrated terminal.
+
+## Security
+
+- `kiroCliChat.kiroCliPath` is `machine` scoped: a workspace's
+  `.vscode/settings.json` can't make the extension run another binary. A set
+  path must be an executable file.
+- `capabilities.untrustedWorkspaces` is `limited`: in Restricted Mode VS Code
+  ignores workspace values of `autopilot`, `defaultEngine` and
+  `interactionMode`.
+- The webview CSP is `default-src 'none'`, scripts by nonce, styles only from
+  the extension's CSS file (no inline styles).
+- Dropped/picked images are read only from absolute paths with an image
+  extension, up to 10 MB, and the bytes must be a PNG, JPEG, GIF or WebP.
 
 ## Build and package
 
@@ -210,6 +225,7 @@ Other CLI calls (`detect.ts`):
 - `tsconfig.test.json` compiles everything except `extension.ts` and the
   webview entry to `dist-test/` for `node --test`.
 - `.vscodeignore` keeps sources, tests and docs out of the `.vsix`.
+- `npm run package` uses the pinned `@vscode/vsce` devDependency.
 
 ## Known limits
 
