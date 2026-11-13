@@ -37,6 +37,18 @@ export interface Mentions {
   skipped: Array<{ path: string; reason: string }>;
 }
 
+/** One line telling the user what `@file:` did, or undefined when the prompt had no mentions. */
+export function mentionNotice(m: { attached: string[]; skipped: Array<{ path: string; reason: string }> }): string | undefined {
+  const parts: string[] = [];
+  if (m.attached.length) {
+    parts.push(`Attached: ${m.attached.join(", ")}.`);
+  }
+  if (m.skipped.length) {
+    parts.push(`Not attached: ${m.skipped.map((s) => `${s.path} (${s.reason})`).join(", ")}.`);
+  }
+  return parts.join(" ") || undefined;
+}
+
 export function expandFileMentions(prompt: string, cwd: string, io: FileIo = realIo): Mentions {
   const attached: string[] = [];
   const skipped: Mentions["skipped"] = [];

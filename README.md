@@ -66,7 +66,9 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
 - **Files in a prompt.** Type `@file:path` (relative to the folder, absolute
   or `~/…`) and the file's text goes to the agent with your prompt. The chat
   keeps showing what you typed. Files must be plain text, up to 256 KB each
-  (1 MB per prompt); anything else is left as typed and the Output log says why.
+  (1 MB per prompt); anything else is left as typed. The chat says which files
+  were attached and which were not. Any path you type is read, also outside the
+  folder (as kiro-cli does), so check pasted text before you send it.
 - **Input.** One line that grows as you type. Enter sends, Shift+Enter adds a
   line. Type `/` for a picker of the engine's commands, agents and skills.
 - **Resume** lists previous sessions for this folder (title, age, message

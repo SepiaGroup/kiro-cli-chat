@@ -8,7 +8,7 @@ import { JsonLineParser, lineSplitter } from "./jsonLineParser";
 import { mapPermissionRequest, mapSessionUpdate } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
 import { checkFolder, cleanReason, folderResource, isShell } from "./approvalRules";
-import { expandFileMentions } from "./fileMentions";
+import { expandFileMentions, mentionNotice } from "./fileMentions";
 import { formatDuration } from "./format";
 import { mapUserInput } from "./questions";
 import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage, Question, RpcId } from "./types";
@@ -206,6 +206,10 @@ export class AcpClient extends EventEmitter {
     for (const s of mentions.skipped) {
       this.emit("log", `@file:${s.path} was not attached (${s.reason})`);
     }
+    const notice = mentionNotice(mentions);
+    if (notice) {
+      this.emit("event", { kind: "notice", text: notice } as ChatEvent);
+    }
     const meta = mentions.attached.length > 0 ? { kiro: { displayText: text } } : undefined;
     // The engine advertises promptCapabilities.image, so images go in as
     // standard ACP image content blocks alongside the text.
@@ -262,6 +266,10 @@ export class AcpClient extends EventEmitter {
     });
     failed.catch(() => undefined);
     const quiet = setInterval(() => {
+      if (this.pendingQuestions.size > 0 || this.pendingPermissions.size > 0) {
+        lastEvent = Date.now(); // waiting for the user, not for the engine
+        return;
+      }
       const silent = Date.now() - lastEvent;
       if (silent >= QUIET_LOG_AFTER_MS && !logged) {
         logged = true;
@@ -502,7 +510,7 @@ export class AcpClient extends EventEmitter {
       return;
     }
     if (method === "_kiro/userInput") {
-      const question = mapUserInput(params);
+      const question = mapUserInput(params, `question-${String(id)}`);
       if (!question) {
         this.emit("log", "ignored a question without text");
         this.sendResponse(id, { action: "dismissed" });

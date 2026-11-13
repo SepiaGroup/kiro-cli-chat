@@ -228,6 +228,9 @@ function handleEvent(ev: ChatEventLike): void {
         addSystem(String(ev.label ?? ""), "");
       }
       break;
+    case "notice":
+      addSystem(String(ev.text ?? ""), "");
+      break;
     case "question":
       hideWorking();
       renderQuestion(ev.question as Question);

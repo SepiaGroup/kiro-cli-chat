@@ -73,6 +73,8 @@ export type ChatEvent =
   | { kind: "configOptions"; options: ConfigOption[] }
   | { kind: "availableCommands"; commands: AvailableCommand[] }
   | { kind: "runFinished"; status: string; stopReason?: string; finalText?: string }
+  /** A short line for the user that is not part of the conversation (e.g. which files were attached). */
+  | { kind: "notice"; text: string }
   | { kind: "error"; message: string };
 
 export interface ToolDiff {

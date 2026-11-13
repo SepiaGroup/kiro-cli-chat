@@ -246,11 +246,13 @@ test("@file: puts the file in the prompt and keeps what was typed as the display
       { type: "text", text: 'what is in <attached_file path="note.txt"> remember the milk </attached_file> and @file:missing.txt?' },
     ]);
     assert.deepEqual(sent.meta, { kiro: { displayText: "what is in @file:note.txt and @file:missing.txt?" } });
+    assert.ok(events.some((e) => e.kind === "notice" && e.text === "Attached: note.txt. Not attached: missing.txt (not a file)."));
     assert.ok(logs.includes("@file:missing.txt was not attached (not a file)"), logs.join("\n"));
     // No attachment: nothing extra is sent.
     events.length = 0;
     await c.prompt("plain");
     assert.deepEqual(JSON.parse(chunks(events)[0]), { blocks: [{ type: "text", text: "plain" }] });
+    assert.ok(!events.some((e) => e.kind === "notice"));
   } finally {
     c.dispose();
   }

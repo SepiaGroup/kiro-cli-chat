@@ -42,3 +42,8 @@ test("answerFor lists picked items only when the option has sub-options", () => 
   assert.equal(answerFor({ title: "blue", subOptions: [{ title: "a" }, { title: "b" }] }, ["a", "b"]), "blue [a, b]");
   assert.equal(answerFor({ title: "blue", subOptions: [{ title: "a" }] }, []), "blue []");
 });
+
+test("a question without a toolCallId gets the fallback id", () => {
+  assert.equal(mapUserInput({ question: "q" }, "question-7")?.toolCallId, "question-7");
+  assert.equal(mapUserInput({ question: "q", toolCallId: "t" }, "question-7")?.toolCallId, "t");
+});

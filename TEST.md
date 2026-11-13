@@ -91,7 +91,7 @@ Then run **Developer: Reload Window**.
 - [ ] In Spec mode, ask for something that needs a decision (for example "ask me to pick a color from red, blue, green with your question tool"). A card shows the choices; clicking one sends it and the agent uses it.
 - [ ] Typing your own answer and pressing Enter sends it. Skip tells the agent to move on.
 - [ ] A question left open and then cancelled (Esc, Stop) disappears from the chat. After a window reload an unanswered question card comes back.
-- [ ] `what is in @file:README.md?` → the agent knows the contents; the chat and a Resumed session show `@file:README.md`, not the file's text. `@file:missing.txt` stays as typed and the Output log says why. A file over 256 KB or a binary file isn't attached.
+- [ ] `what is in @file:README.md?` → the agent knows the contents; the chat and a Resumed session show `@file:README.md`, not the file's text. `@file:missing.txt` stays as typed. A line in the chat says "Attached: …" and "Not attached: … (reason)". A file over 256 KB or a binary file isn't attached.
 
 ### Commands (Command Palette)
 - [ ] **Restart Engine** and the Restart button ask first; Cancel does nothing.

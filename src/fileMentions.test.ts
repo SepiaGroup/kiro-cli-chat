@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "path";
-import { expandFileMentions, FileIo, MAX_MENTION_BYTES } from "./fileMentions";
+import { expandFileMentions, FileIo, MAX_MENTION_BYTES, mentionNotice } from "./fileMentions";
 
 function io(files: Record<string, string | Buffer>): FileIo {
   return {
@@ -35,6 +35,15 @@ test("the same file twice counts twice toward the total", () => {
   const m = expandFileMentions("@file:a @file:a @file:a @file:a @file:a", "/w", io({ "/w/a": body }));
   assert.equal(m.attached.length, 4);
   assert.deepEqual(m.skipped.map((s) => s.reason), ["too much attached already"]);
+});
+
+test("mentionNotice says what was attached and what was not", () => {
+  assert.equal(mentionNotice({ attached: [], skipped: [] }), undefined);
+  assert.equal(mentionNotice({ attached: ["a.ts", "b.ts"], skipped: [] }), "Attached: a.ts, b.ts.");
+  assert.equal(
+    mentionNotice({ attached: ["a.ts"], skipped: [{ path: "x", reason: "not a file" }] }),
+    "Attached: a.ts. Not attached: x (not a file)."
+  );
 });
 
 test("punctuation after a mention isn't part of the name", () => {

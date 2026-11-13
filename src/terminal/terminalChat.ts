@@ -410,6 +410,10 @@ export class TerminalChat implements vscode.Pseudoterminal {
       case "availableCommands":
         this.engineCommands = ev.commands;
         break;
+      case "notice":
+        this.endAssistant();
+        this.print(style.gray(sanitize(ev.text)));
+        break;
       case "error":
         this.endAssistant();
         this.print(style.red(sanitize(ev.message)));

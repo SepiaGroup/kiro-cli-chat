@@ -14,7 +14,8 @@ function text(v: unknown, max: number): string | undefined {
 }
 
 /** Validate a `_kiro/userInput` request; undefined if it has no question. */
-export function mapUserInput(params: unknown): Question | undefined {
+/** `fallbackId` names a question the engine sent without a toolCallId (so two of them never collide). */
+export function mapUserInput(params: unknown, fallbackId = ""): Question | undefined {
   if (typeof params !== "object" || params === null) {
     return undefined;
   }
@@ -42,7 +43,7 @@ export function mapUserInput(params: unknown): Question | undefined {
       ...(subs.length > 0 ? { subOptions: subs, ...(text(o.subOptionsLabel, MAX_TEXT) ? { subOptionsLabel: text(o.subOptionsLabel, MAX_TEXT) } : {}) } : {}),
     });
   }
-  return { toolCallId: String(p.toolCallId ?? ""), question, options };
+  return { toolCallId: String(p.toolCallId ?? "") || fallbackId, question, options };
 }
 
 /** The answer for a chosen option: its title, plus the picked items if it has any. */
