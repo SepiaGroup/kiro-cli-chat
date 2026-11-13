@@ -44,6 +44,17 @@ const BASIC = `(msg, send, ask) => {
   if (msg.method === "session/new") send({ id: msg.id, result: { sessionId: "s1" } });
 }`;
 
+/** stderr and stdout are separate pipes, so a log line can arrive after the reply it belongs to. */
+async function eventually(what: string, cond: () => boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) {
+      throw new Error("timed out waiting for " + what);
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 function client(
   cliPath: string,
   timeoutsMs?: Record<string, number>,
@@ -93,7 +104,7 @@ test("unknown engine requests get method-not-found, string ids included", async 
   try {
     await c.start();
     await c.prompt("hi");
-    assert.ok(logs.some((l) => l.includes('"code":-32601')), logs.join("\n"));
+    await eventually("the engine's report of the error it got", () => logs.some((l) => l.includes('"code":-32601')));
   } finally {
     c.dispose();
   }
@@ -125,7 +136,7 @@ test("an engine dying mid-turn rejects the prompt, ends the turn and doesn't cra
     assert.equal(await exited, 3);
     assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "error"));
     // stderr split across chunks arrives as one line.
-    assert.ok(logs.includes("boom: partial line"), logs.join("\n"));
+    await eventually("the split stderr line", () => logs.includes("boom: partial line"));
     // Writing after exit is a no-op, not an EPIPE crash.
     c.cancel();
     await assert.rejects(c.setMode("plan"), /isn't running/);
@@ -259,8 +270,7 @@ test("a prompt the engine never answers is cancelled and fails with a clear erro
     await assert.rejects(c.prompt("hi"), /sent nothing for 0s, so the turn was cancelled/);
     assert.ok(events.some((e) => e.kind === "runFinished" && e.status === "error"));
     assert.ok(logs.some((l) => l.includes("cancelling the turn")));
-    await new Promise((r) => setTimeout(r, 100));
-    assert.ok(logs.includes("engine got cancel"), logs.join("\n"));
+    await eventually("the engine's report of the cancel", () => logs.includes("engine got cancel"));
   } finally {
     c.dispose();
   }
