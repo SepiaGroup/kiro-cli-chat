@@ -30,7 +30,7 @@ export interface RemoteChat {
   /** The chat so far, as messages for a page that has none yet. */
   snapshot(): unknown[];
   /** A message from a remote device that passed the policy. */
-  send(msg: RemoteMessage, device: string): Promise<void>;
+  send(msg: RemoteMessage, device: { id: string; name: string }): Promise<void>;
   /** Live messages, in order. Returns the way to stop. */
   subscribe(listener: (msg: unknown) => void): () => void;
 }
@@ -48,8 +48,8 @@ export interface RemoteServerOptions {
   permissions(): readonly Permission[];
   /** Files under /static/ (script, styles, manifest, icon); undefined = not found. */
   assets(name: string): RemoteAsset | undefined;
-  /** Cookies get `Secure` (on when the page is served over HTTPS). */
-  secureCookies?: boolean;
+  /** Cookies get `Secure` unless the request came straight to loopback over plain HTTP (a proxy in front means HTTPS). */
+  secureCookies?(host: string | undefined): boolean;
   /** Host names the server answers to besides loopback (e.g. the tailnet name). */
   allowedHosts?(): readonly string[];
   /** A device just paired. */
@@ -233,7 +233,7 @@ export class RemoteServer {
       if (method === "POST" && path === "/api/logout") {
         this.opts.devices.remove(device.id);
         this.disconnectDevice(device.id);
-        res.setHeader("Set-Cookie", clearedCookie(this.opts.secureCookies !== false));
+        res.setHeader("Set-Cookie", clearedCookie(this.secure(req)));
         return this.json(res, 200, { ok: true });
       }
       if (method === "GET" && path === "/api/chats") {
@@ -290,7 +290,7 @@ export class RemoteServer {
     }
     const name = cleanDeviceName(b.name) || deviceNameFromUserAgent(req.headers["user-agent"]);
     const { device, token } = this.opts.devices.add(name);
-    res.setHeader("Set-Cookie", deviceCookie(token, this.opts.secureCookies !== false));
+    res.setHeader("Set-Cookie", deviceCookie(token, this.secure(req)));
     this.opts.log?.(`paired device ${device.id} (${device.name})`);
     this.opts.onPaired?.(device);
     this.json(res, 200, { device: { id: device.id, name: device.name } });
@@ -314,7 +314,7 @@ export class RemoteServer {
       return this.fail(res, checked.status, checked.reason);
     }
     try {
-      await chat.send(checked.msg, device.id);
+      await chat.send(checked.msg, { id: device.id, name: device.name });
     } catch (err) {
       this.opts.log?.(`message from ${device.id} failed: ${err instanceof Error ? err.message : String(err)}`);
       return this.fail(res, 500, "the chat could not take that");
@@ -367,6 +367,8 @@ export class RemoteServer {
         this.sse(client, undefined, JSON.stringify(e.msg), feed.log.idOf(e.seq));
       }
     } else {
+      // Tells a page that already shows this chat to clear it before the snapshot arrives.
+      this.sse(client, "snapshot", "{}");
       for (const msg of chat.snapshot()) {
         this.sse(client, undefined, JSON.stringify(msg));
       }
@@ -452,13 +454,17 @@ export class RemoteServer {
     res.end(asset.body);
   }
 
+  private secure(req: http.IncomingMessage): boolean {
+    return this.opts.secureCookies ? this.opts.secureCookies(req.headers.host) : !isLoopbackHost(req.headers.host);
+  }
+
   private hostAllowed(host: string | undefined): boolean {
     const allowed = this.opts.allowedHosts?.();
     if (!allowed) {
       return true;
     }
-    const name = (host ?? "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
-    return name === "127.0.0.1" || name === "localhost" || name === "::1" || allowed.some((h) => h.toLowerCase() === name);
+    const name = hostName(host);
+    return isLoopbackName(name) || allowed.some((h) => h.toLowerCase() === name);
   }
 
   /** Same-origin only: a page on another site must not be able to use a paired browser's cookie. */
@@ -543,4 +549,17 @@ export class RemoteServer {
     }
     this.json(res, status, { error });
   }
+}
+
+function hostName(host: string | undefined): string {
+  return (host ?? "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+function isLoopbackName(name: string): boolean {
+  return name === "127.0.0.1" || name === "localhost" || name === "::1";
+}
+
+/** Whether a Host header names this machine itself (no proxy in between). */
+export function isLoopbackHost(host: string | undefined): boolean {
+  return isLoopbackName(hostName(host));
 }

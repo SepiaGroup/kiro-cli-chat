@@ -18,11 +18,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private active?: ChatSession;
   private lastTab?: vscode.WebviewPanel;
   private tabCount = 0;
+  private readonly changed = new vscode.EventEmitter<void>();
+  /** The set of chats, or whether one is busy, changed (remote access lists them). */
+  readonly onDidChangeChats = this.changed.event;
   private readonly hooks: ChatSessionHooks = {
     onActive: (chat) => {
       this.active = chat;
     },
     newTab: () => this.newTab(),
+    changed: () => this.changed.fire(),
   };
 
   constructor(
@@ -46,6 +50,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     const chat = this.panelChat;
     chat.attach(webviewView.webview);
+    this.changed.fire();
     webviewView.onDidDispose(() => chat.detach(webviewView.webview));
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
@@ -98,6 +103,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       sessionIdOf(state)
     );
     this.tabs.set(panel, chat);
+    this.changed.fire();
     this.active = chat;
     this.lastTab = panel;
     chat.attach(panel.webview);
@@ -110,6 +116,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     panel.onDidDispose(() => {
       chat.dispose();
       this.tabs.delete(panel);
+      this.changed.fire();
       if (this.active === chat) {
         this.active = undefined;
       }
@@ -148,7 +155,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this.target()?.login();
   }
 
+  /** Every open chat: the panel view's and each tab's. */
+  chats(): ChatSession[] {
+    return [...(this.panelChat ? [this.panelChat] : []), ...this.tabs.values()];
+  }
+
   dispose(): void {
+    this.changed.dispose();
     this.panelChat?.dispose();
     for (const chat of this.tabs.values()) {
       chat.dispose();

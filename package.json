@@ -94,6 +94,26 @@
         "command": "kiroCliChat.newTerminalChat",
         "title": "Kiro CLI Chat: New Terminal Chat (text mode)",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "kiroCliChat.startRemoteAccess",
+        "title": "Kiro CLI Chat: Start Remote Access"
+      },
+      {
+        "command": "kiroCliChat.stopRemoteAccess",
+        "title": "Kiro CLI Chat: Stop Remote Access"
+      },
+      {
+        "command": "kiroCliChat.showRemoteLink",
+        "title": "Kiro CLI Chat: Show Remote Access Link"
+      },
+      {
+        "command": "kiroCliChat.removeRemoteDevice",
+        "title": "Kiro CLI Chat: Remove Remote Device…"
+      },
+      {
+        "command": "kiroCliChat.remoteMenu",
+        "title": "Kiro CLI Chat: Remote Access Menu"
       }
     ],
     "viewsContainers": {
@@ -188,6 +208,38 @@
           "type": "boolean",
           "default": true,
           "description": "Press Enter to send a message; Shift+Enter inserts a newline. If off, the behavior is reversed."
+        },
+        "kiroCliChat.remote.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Start remote access when VS Code starts (otherwise use **Kiro CLI Chat: Start Remote Access**). Machine setting: a workspace cannot turn it on."
+        },
+        "kiroCliChat.remote.permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "view",
+              "prompt",
+              "approve"
+            ]
+          },
+          "default": [
+            "view",
+            "prompt",
+            "approve"
+          ],
+          "scope": "machine",
+          "markdownDescription": "What a paired remote device may do: `view` the chats, `prompt` (send, steer, stop, answer questions), `approve` (allow or deny a command once)."
+        },
+        "kiroCliChat.remote.port": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "scope": "machine",
+          "markdownDescription": "Local port for remote access (it only listens on 127.0.0.1). 0 picks a free port."
         }
       }
     },

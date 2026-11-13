@@ -18,6 +18,9 @@ class Emitter<T = void> {
       l(v);
     }
   }
+  dispose(): void {
+    this.listeners = [];
+  }
 }
 
 class FakeWebview {
@@ -53,6 +56,7 @@ class FakePanel {
 
 const created: FakePanel[] = [];
 const fakeVscode = {
+  EventEmitter: Emitter,
   Uri: {
     joinPath: (...parts: unknown[]) => ({ fsPath: parts.slice(1).join("/") }),
     file: (p: string) => ({ fsPath: p }),
@@ -195,4 +199,20 @@ test("Resume command opens the panel once the new tab's webview is ready", async
   w.messages.fire({ type: "ready" });
   await tick();
   assert.ok(w.sent.some((m) => m.type === "openResume"));
+});
+
+test("the list of chats follows the tabs, and listeners hear about changes", () => {
+  const p = makeProvider();
+  let changes = 0;
+  p.onDidChangeChats(() => changes++);
+  assert.deepEqual(p.chats(), []);
+  p.newTab();
+  p.newTab();
+  assert.equal(p.chats().length, 2);
+  assert.notEqual(p.chats()[0].id, p.chats()[1].id);
+  assert.deepEqual(p.chats().map((c) => c.title), ["Kiro Chat", "Kiro Chat 2"]);
+  assert.equal(changes, 2);
+  created[0].disposed.fire();
+  assert.equal(p.chats().length, 1);
+  assert.equal(changes, 3);
 });

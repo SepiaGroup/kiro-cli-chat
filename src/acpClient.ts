@@ -406,10 +406,14 @@ export class AcpClient extends EventEmitter {
    * After an entire-tool rule, approvals already waiting for the same tool
    * are answered too (the engine doesn't re-check them).
    */
-  respondToApproval(requestId: RpcId, answer: string | ApprovalAnswer): void {
+  respondToApproval(requestId: RpcId, answer: string | ApprovalAnswer, opts?: { onceOnly?: boolean }): string {
     const a: ApprovalAnswer = typeof answer === "string" ? { optionId: answer } : answer;
     const req = this.pendingPermissions.get(requestId);
     const kind = req?.options.find((o) => o.optionId === a.optionId)?.kind ?? "";
+    if (opts?.onceOnly && kind !== "allow_once" && kind !== "reject_once") {
+      // A remote device may allow or deny this one request, never create a rule. Left pending.
+      throw new Error("A remote device can only allow or deny once.");
+    }
     const result: Record<string, unknown> = { outcome: { outcome: "selected", optionId: a.optionId } };
     // Throws for an invalid folder, leaving the request pending.
     const meta = req ? consentMeta(req, kind, a) : undefined;
@@ -423,6 +427,7 @@ export class AcpClient extends EventEmitter {
     if (req?.capability && always && a.rule === "tool") {
       this.resolveWaiting(req, kind === "allow_always");
     }
+    return kind;
   }
 
   /**

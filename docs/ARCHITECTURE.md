@@ -56,12 +56,14 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 ├─ fileMentions.ts   `@file:path` → <attached_file> text in the prompt
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
 ├─ uiTargets.ts      the screens one chat shows on (desktop webview, remote browsers): who gets what, when
-├─ remote/           remote access (not wired into the extension yet): the pure parts
+├─ remote/           remote access (see "Remote access" below)
 │    ├─ remoteAuth.ts    pairing code, device records (hashes only), cookies, rate limit
 │    ├─ remotePolicy.ts  allow-list of what a remote device may send, and the shape it gets through in
 │    ├─ eventLog.ts      numbered, bounded log of a chat's messages (catch-up after a dropped connection)
 │    ├─ remoteServer.ts  loopback HTTP server: page, pairing, SSE streams, messages
-│    └─ remotePage.ts    the HTML and security headers
+│    ├─ remotePage.ts    the HTML and security headers
+│    ├─ assets.ts        the fixed list of files served from media/
+│    └─ remoteController.ts  (vscode) start/stop, status bar, pairing link, devices, settings
 ├─ errorAdvice.ts    tidy a failed prompt's message, add a hint (login, session, network, rate limit); the TUI's wording
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn
@@ -120,6 +122,43 @@ module.
 The webview's messages are handled in `ChatSession.onMessage` (the
 `switch` on `msg.type`) and `webview/main.ts` (the `message` listener); those
 are the source of truth for the message names.
+
+## Remote access
+
+A browser on another device shows and drives a webview chat while the engine
+keeps running here. Plan and decisions: `docs/REMOTE-CONTROL.md`.
+
+- `RemoteController` starts a `RemoteServer` bound to 127.0.0.1 (a tunnel such
+  as Tailscale carries traffic to it). The page is the chat webview's own
+  HTML and `webview.js`; `media/remoteShim.js` (built from
+  `webview/remoteShim.ts`) stands in for `acquireVsCodeApi`: it pairs, picks a
+  chat, reads the chat's messages from an `EventSource` into `message` events
+  and posts the page's messages with `fetch`. Its decisions (pairing link,
+  which chat to open, texts) are in `webview/remoteBoot.ts`.
+- `ChatSession` implements `RemoteChat` (`snapshot()` from the transcript,
+  `subscribe()` as a ready remote target, `send()` for a checked message).
+  `UiTargets` keeps the desktop webview and the remote listener apart: the
+  desktop gets messages at once, a remote listener is always ready.
+- Streams: `GET /api/chats/:id/events`. A new stream gets a `snapshot` marker
+  event (the page clears itself), the transcript, then a `sync` event whose id
+  is where live messages continue. A reconnect sends `Last-Event-ID` and gets
+  only what it missed from the bounded `EventLog`; ids carry a random epoch, so
+  an id from before an extension restart means a new snapshot.
+- A remote device is paired by a one-use 10-minute code in the link's
+  fragment, exchanged for an `HttpOnly; SameSite=Strict` cookie (`Secure` when
+  the request came through a proxy). Only a hash of the cookie value is stored
+  (in SecretStorage). Every `/api` request needs the cookie and a same-origin
+  request; messages pass `remotePolicy.ts` (an allow-list that also removes the
+  `rule` and `folder` fields of an approval).
+- A remote approval must be allow once or deny once: `AcpClient.respondToApproval`
+  with `onceOnly` throws for any other option kind (the option ids come from the
+  engine, `allow_always` saves a rule), leaving the request waiting.
+- Whoever answers an approval, `ChatSession` posts `approvalResolved` with a
+  label ("Allowed from <device>" or "on the desktop"), so the other screens
+  drop their card and say who answered. Questions already did this.
+- The settings (`kiroCliChat.remote.*`) have machine scope, so a workspace
+  cannot turn remote access on; it also refuses to start in an untrusted
+  workspace.
 
 ## Terminal chat
 

@@ -1,0 +1,54 @@
+/* Extras for the chat page when it runs in a browser (remote access). */
+
+.remote-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--vscode-editor-background, Canvas);
+  color: var(--vscode-foreground, CanvasText);
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+}
+
+.remote-gate.hidden,
+.remote-bar.hidden {
+  display: none;
+}
+
+.remote-gate p {
+  max-width: 32em;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.remote-gate button {
+  display: block;
+  min-width: 14em;
+  margin: 6px auto;
+  padding: 10px 14px;
+  font: inherit;
+  border: 1px solid var(--vscode-button-border, currentColor);
+  border-radius: 6px;
+  background: var(--vscode-button-background, ButtonFace);
+  color: var(--vscode-button-foreground, ButtonText);
+  cursor: pointer;
+}
+
+.remote-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 101;
+  padding: 6px 12px;
+  text-align: center;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  background: var(--vscode-statusBarItem-warningBackground, #b58900);
+  color: var(--vscode-statusBarItem-warningForeground, #fff);
+}

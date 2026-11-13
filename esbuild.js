@@ -32,10 +32,18 @@ const webviewConfig = {
   logLevel: "info",
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const remoteShimConfig = {
+  ...webviewConfig,
+  entryPoints: ["src/webview/remoteShim.ts"],
+  outfile: "media/remoteShim.js",
+};
+
 async function main() {
   const ctxs = await Promise.all([
     esbuild.context(extensionConfig),
     esbuild.context(webviewConfig),
+    esbuild.context(remoteShimConfig),
   ]);
 
   if (watch) {

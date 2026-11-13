@@ -19,10 +19,11 @@ steps are in [CONTRIBUTING.md](CONTRIBUTING.md), manual checks in
   `types.ts`.
 - Webview chat (editor tabs + panel view): `chatViewProvider.ts`,
   `chatSession.ts` (extension side, with `uiTargets.ts` for its screens) and `webview/*.ts` (browser side, bundled
-  to `media/webview.js`, styled by `media/webview.css`).
+  to `media/webview.js` and `media/remoteShim.js`, styled by `media/webview.css`).
 - Terminal chat (text mode, a Pseudoterminal): `terminal/*.ts`.
 - Only `extension.ts`, `config.ts` (settings and editor state), `chatViewProvider.ts`, `chatSession.ts`,
-  `terminal/terminalChat.ts` and `terminal/terminalCommands.ts` import
+  `terminal/terminalChat.ts`, `terminal/terminalCommands.ts` and
+  `remote/remoteController.ts` import
   `vscode`. Everything else is pure so `node --test` can test it. Keep it so:
   put new logic in a pure module and test it there.
 

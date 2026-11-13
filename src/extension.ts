@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import { ChatViewProvider } from "./chatViewProvider";
 import { trackActiveEditor } from "./config";
+import { RemoteController } from "./remote/remoteController";
 import { TerminalChat } from "./terminal/terminalChat";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -32,6 +33,17 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   registerTerminalChat(context, output);
+
+  const remote = new RemoteController(context, output, provider);
+  context.subscriptions.push(
+    remote,
+    vscode.commands.registerCommand("kiroCliChat.startRemoteAccess", () => remote.start(true)),
+    vscode.commands.registerCommand("kiroCliChat.stopRemoteAccess", () => remote.stop()),
+    vscode.commands.registerCommand("kiroCliChat.showRemoteLink", () => remote.showLink()),
+    vscode.commands.registerCommand("kiroCliChat.removeRemoteDevice", () => remote.removeDevice()),
+    vscode.commands.registerCommand("kiroCliChat.remoteMenu", () => remote.menu())
+  );
+  void remote.startIfWanted();
 
   const openInPanel = async () => {
     await vscode.commands.executeCommand("kiroCliChat.chatView.focus");
