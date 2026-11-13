@@ -54,3 +54,31 @@ function parseLine(line: string): ParsedLine {
   }
   return { type: "raw", text: line };
 }
+
+/** Splits a stream into lines, keeping a partial last line for the next chunk. */
+export function lineSplitter(onLine: (line: string) => void): { push(chunk: string): void; flush(): void } {
+  let rest = "";
+  return {
+    push(chunk: string) {
+      const parts = (rest + chunk).split("\n");
+      rest = parts.pop() ?? "";
+      for (const line of parts) {
+        onLine(line.replace(/\r$/, ""));
+      }
+    },
+    flush() {
+      if (rest) {
+        onLine(rest);
+        rest = "";
+      }
+    },
+  };
+}
+
+/**
+ * Minimal ACP client. Emits:
+ *  - "event"  (ChatEvent) for normalized chat events
+ *  - "log"    (string)    for stderr lines
+ *  - "exit"   (code)      when the process exits
+ *  - "notification" (method, params) for unmapped JSON-RPC notifications
+ */

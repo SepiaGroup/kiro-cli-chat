@@ -4,7 +4,7 @@
 
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { EventEmitter } from "events";
-import { JsonLineParser } from "./jsonLineParser";
+import { JsonLineParser, lineSplitter } from "./jsonLineParser";
 import { mapStreamJsonEvent } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
 import { ChatEvent, EngineVersion } from "./types";
@@ -80,15 +80,20 @@ export class OneShotRunner extends EventEmitter {
           }
         }
       });
-      child.stderr.on("data", (chunk: string) => {
-        for (const line of chunk.split("\n")) {
-          if (line.trim()) {
-            this.emit("log", line);
-          }
+      const stderr = lineSplitter((line) => {
+        if (line.trim()) {
+          this.emit("log", line);
         }
       });
-      child.on("error", (err) => reject(err));
+      child.stderr.on("data", (chunk: string) => stderr.push(chunk));
+      child.stdin.on("error", (err) => this.emit("log", `stdin error: ${err.message}`));
+      child.on("error", (err) => {
+        this.active = undefined;
+        this.emit("turnEnd", null);
+        reject(err);
+      });
       child.on("exit", (code) => {
+        stderr.flush();
         const tail = parser.flush();
         if (tail && tail.type === "json") {
           this.dispatch(tail.value);

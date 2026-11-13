@@ -19,7 +19,10 @@ slash commands use v3-only ACP methods.
 
 ## Requirements
 
-- `kiro-cli` installed and on PATH (or set `kiroCliChat.kiroCliPath`).
+- macOS. Built and tested on an Intel Mac without AVX; other platforms aren't
+  supported (the extension uses `bash`, macOS paths and macOS PATH handling).
+- `kiro-cli` with the v3 engine, installed and on PATH (or set
+  `kiroCliChat.kiroCliPath`). Tested with kiro-cli 2.35.2.
 - Logged in (`kiro-cli login`). The chat checks at startup and offers a login
   button if you aren't.
 - VS Code 1.98 or later.
@@ -28,7 +31,7 @@ slash commands use v3-only ACP methods.
 
 ### Chat tabs (webview)
 
-`Cmd/Ctrl+Shift+K`, the **Kiro Chat** status-bar item, or **Kiro CLI Chat:
+`Cmd+Alt+K` (`Ctrl+Alt+K` elsewhere), the **Kiro Chat** status-bar item, or **Kiro CLI Chat:
 Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
 `panel` to use the bottom panel instead).
 
@@ -47,7 +50,13 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
   Copy button). Tool calls show as cards with the files touched, `+`/`-` diffs
   and how long they took.
 - **Approvals.** In Supervised mode (Autopilot off) file changes and commands
-  wait for Allow / Always allow / Deny / Always deny.
+  wait for your answer, with the same choices as kiro-cli: **Allow**,
+  **Create allow rule…**, **Deny**, **Deny with reason…** (the agent is told
+  why) and **Create deny rule…**. A rule covers this exact file or
+  command, the command pattern (`find *`), a folder and everything under it
+  (file changes; you can edit the folder), or the entire tool (every
+  command, every file read, …). Rules last for the session. A line like
+  `a; b && c` is asked one command at a time, and the card says which.
 - **Images.** Paste a screenshot (`Cmd+V`), Shift-drag image files onto the
   chat, or use **Kiro CLI Chat: Attach Image or File**. Dropping other files
   inserts their paths.
@@ -67,7 +76,10 @@ the Terminal panel's **+** dropdown. Each terminal has its own engine and
 conversation, so you can open several.
 
 It streams markdown (colors, lists, code blocks), shows tool cards with diffs
-and asks `y`/`a`/`n` for approvals. The prompt shows the context used (`17% >`,
+and asks for approvals with kiro-cli's keys: `y` allow, `t` create an allow
+rule, `n` deny, Tab deny with a reason, `d` create a deny rule. The rule keys
+list the rules to pick by number (exact, pattern, folder, entire tool); Esc
+goes back. The prompt shows the context used (`17% >`,
 or `17% !>` with Autopilot), and each reply ends with
 `▸ Credits: … • Time: …`.
 
@@ -98,7 +110,7 @@ a copied image, to attach them.
 
 | Command | What it does |
 | --- | --- |
-| Kiro CLI Chat: Open Chat (`Cmd/Ctrl+Shift+K`) | Shows the most recent chat tab (or the panel, per `openIn`). |
+| Kiro CLI Chat: Open Chat (`Cmd+Alt+K`) | Shows the most recent chat tab (or the panel, per `openIn`). |
 | Kiro CLI Chat: New Chat Tab | Opens another chat tab with a new conversation. |
 | Kiro CLI Chat: Open Chat in Editor Tab / in Panel | Opens the chat in that place. |
 | Kiro CLI Chat: New Terminal Chat (text mode) | Opens a terminal chat. |
@@ -115,27 +127,48 @@ a copied image, to attach them.
 | Setting | Default | Description |
 | --- | --- | --- |
 | `kiroCliChat.openIn` | `editor` | Where Open Chat goes: `editor` (tab) or `panel`. |
-| `kiroCliChat.kiroCliPath` | _(empty)_ | Path to `kiro-cli`. Empty = PATH, then `~/.local/bin/kiro-cli`. |
+| `kiroCliChat.kiroCliPath` | _(empty)_ | Path to `kiro-cli`. Empty = PATH, then `~/.local/bin/kiro-cli`. User settings only (a workspace can't set it). |
 | `kiroCliChat.defaultModel` | `auto` | Model for new sessions (see `kiro-cli chat --list-models`). |
 | `kiroCliChat.autopilot` | `false` | Off = Supervised (approve each change). On = tools run without asking. |
 | `kiroCliChat.enterToSend` | `true` | Enter sends, Shift+Enter adds a line. Off reverses them. |
-| `kiroCliChat.defaultEngine` | `auto` | Engine to start. `auto` picks the newest one that runs without AVX (v3 today). Keep it on `auto` or `v3`. |
+| `kiroCliChat.defaultEngine` | `auto` | `auto` checks that the engine runs on this machine (once, then remembered) or `v3`. |
 | `kiroCliChat.interactionMode` | `persistent` | `persistent` (ACP) is required for everything above. `one-shot` is a basic fallback with no approvals. |
 
-## Build from source
+## Troubleshooting
 
-```bash
-npm install
-npm run compile      # type-check
-npm run lint         # eslint
-npm run build        # bundle extension + webview into dist/ and media/
-npm test             # unit tests (node --test)
-npx @vscode/vsce package --no-dependencies   # produce the .vsix
-code --install-extension kiro-cli-chat-0.1.0.vsix --force
-```
+Logs are in **Output → Kiro CLI Chat** (View → Output, then pick it from the
+list). They show the kiro-cli path used, the engine detected and the engine's
+own messages.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works and the
-engine behavior it relies on, and [TEST.md](TEST.md) for the test checklist.
+- **"Could not find the kiro-cli binary"**: install kiro-cli, or set
+  `kiroCliChat.kiroCliPath` (user settings) to its full path. `which kiro-cli`
+  in a terminal shows where it is.
+- **"kiroCliChat.kiroCliPath is set to …, which doesn't exist"**: fix or clear
+  the setting.
+- **Login card keeps coming back**: run `kiro-cli login` in a terminal, then
+  click Retry. `kiro-cli whoami` shows whether you're logged in.
+- **"No Kiro engine runs on this machine"**: run
+  `kiro-cli chat --agent-engine v3` in a terminal. If that crashes with
+  `illegal hardware instruction` (SIGILL), your kiro-cli version needs AVX even
+  for the engine; try updating it.
+- **"The Kiro engine didn't answer … within …s"**: the engine hung while
+  starting. Use **Restart** (or `/restart` in a terminal chat); the log shows
+  the engine's last messages.
+- **Engine exited**: the chat says so. Restart starts a new engine; Resume
+  reopens the conversation.
+
+## Privacy
+
+Your prompts, attached images and the files the agent reads are sent to Kiro
+by kiro-cli, as when you use kiro-cli directly. Kiro's own content-collection
+setting is in ⚙ Settings. This extension adds no telemetry and makes no
+network requests of its own.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for building, testing and releasing,
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works, and
+[TEST.md](TEST.md) for the manual test checklist.
 
 ## License
 

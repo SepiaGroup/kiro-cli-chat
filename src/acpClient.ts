@@ -4,10 +4,11 @@
 
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { EventEmitter } from "events";
-import { JsonLineParser } from "./jsonLineParser";
-import { mapSessionUpdate } from "./eventMapper";
+import { JsonLineParser, lineSplitter } from "./jsonLineParser";
+import { mapPermissionRequest, mapSessionUpdate } from "./eventMapper";
 import { sanitizedEnv } from "./cli";
-import { ChatEvent, EngineVersion, PromptImage } from "./types";
+import { checkFolder, cleanReason, folderResource, isShell } from "./approvalRules";
+import { ApprovalAnswer, ApprovalRequest, ChatEvent, EngineVersion, PromptImage, RpcId } from "./types";
 
 export interface AcpClientOptions {
   cliPath: string;
@@ -15,6 +16,8 @@ export interface AcpClientOptions {
   model?: string;
   cwd: string;
   trustAllTools?: boolean;
+  /** Override request timeouts (tests). */
+  timeoutsMs?: Record<string, number>;
 }
 
 type PendingResolver = {
@@ -23,20 +26,32 @@ type PendingResolver = {
 };
 
 /**
- * Minimal ACP client. Emits:
- *  - "event"  (ChatEvent) for normalized chat events
- *  - "log"    (string)    for stderr lines
- *  - "exit"   (code)      when the process exits
- *  - "notification" (method, params) for unmapped JSON-RPC notifications
+ * Timeouts for requests that should answer quickly. `session/prompt` has none
+ * (a turn can run for a long time); extension methods like compaction can
+ * also be slow and have none. Generous because older Macs start slowly.
  */
+const TIMEOUTS_MS: Record<string, number> = {
+  initialize: 120_000,
+  "session/new": 120_000,
+  "session/load": 180_000,
+  "session/set_mode": 30_000,
+  "session/set_config_option": 30_000,
+};
+
+/** How long to wait after SIGTERM before SIGKILL on dispose. */
+const KILL_AFTER_MS = 3000;
+
 export class AcpClient extends EventEmitter {
   private child?: ChildProcessWithoutNullStreams;
   private readonly parser = new JsonLineParser();
   private nextId = 1;
   private readonly pending = new Map<number, PendingResolver>();
+  private exited = false;
   private sessionId?: string;
   private initialized = false;
   private autoApprove = false;
+  /** Permission requests waiting for an answer, by JSON-RPC id. */
+  private pendingPermissions = new Map<RpcId, ApprovalRequest>();
   private readonly stderrTail: string[] = [];
 
   constructor(private readonly opts: AcpClientOptions) {
@@ -82,25 +97,34 @@ export class AcpClient extends EventEmitter {
     this.child.stderr.setEncoding("utf8");
 
     this.child.stdout.on("data", (chunk: string) => this.onStdout(chunk));
-    this.child.stderr.on("data", (chunk: string) => {
-      for (const line of chunk.split("\n")) {
-        if (line.trim()) {
-          this.stderrTail.push(line);
-          if (this.stderrTail.length > 40) {
-            this.stderrTail.shift();
-          }
-          this.emit("log", line);
+    const stderr = lineSplitter((line) => {
+      if (line.trim()) {
+        this.stderrTail.push(line);
+        if (this.stderrTail.length > 40) {
+          this.stderrTail.shift();
         }
+        this.emit("log", line);
       }
     });
+    this.child.stderr.on("data", (chunk: string) => stderr.push(chunk));
+    // Writing to an engine that just died raises EPIPE here; without a
+    // handler it would be an uncaught exception in the extension host.
+    this.child.stdin.on("error", (err) => this.emit("log", `stdin error: ${err.message}`));
     this.child.on("exit", (code) => {
+      this.exited = true;
+      stderr.flush();
       const detail = this.stderrTail.slice(-6).join(" | ");
       this.rejectAllPending(
         new Error(`kiro-cli acp exited (code=${code})${detail ? " — " + detail : ""}`)
       );
       this.emit("exit", code);
     });
-    this.child.on("error", (err) => this.emit("log", `spawn error: ${err.message}`));
+    this.child.on("error", (err) => {
+      // E.g. ENOENT: the binary can't be started. "exit" may not follow.
+      this.exited = true;
+      this.emit("log", `spawn error: ${err.message}`);
+      this.rejectAllPending(new Error(`Couldn't start ${this.opts.cliPath}: ${err.message}`));
+    });
 
     // ACP initialize handshake.
     const initResult = await this.request("initialize", {
@@ -165,8 +189,18 @@ export class AcpClient extends EventEmitter {
     for (const img of images) {
       prompt.push({ type: "image", mimeType: img.mimeType, data: img.data });
     }
-    await this.request("session/prompt", { sessionId: this.sessionId, prompt });
-    this.emit("event", { kind: "runFinished", status: "success" } as ChatEvent);
+    // Always report the end of the turn, so the UI leaves its busy state.
+    let status = "error";
+    let stopReason: string | undefined;
+    try {
+      const res = (await this.request("session/prompt", { sessionId: this.sessionId, prompt })) as
+        | { stopReason?: unknown }
+        | undefined;
+      stopReason = typeof res?.stopReason === "string" ? res.stopReason : undefined;
+      status = stopReason === "cancelled" ? "cancelled" : stopReason === "refusal" ? "error" : "success";
+    } finally {
+      this.emit("event", { kind: "runFinished", status, ...(stopReason ? { stopReason } : {}) } as ChatEvent);
+    }
   }
 
   /**
@@ -180,9 +214,55 @@ export class AcpClient extends EventEmitter {
     return (await this.request(method, { sessionId: this.sessionId, ...params })) as T;
   }
 
-  /** Answer a pending tool-approval request by its id with an optionId. */
-  respondToApproval(requestId: number, optionId: string): void {
-    this.sendResponse(requestId, { outcome: { outcome: "selected", optionId } });
+  /**
+   * Answer a pending tool-approval request. Sends `_meta.kiro.consent` the
+   * way the kiro-cli TUI does: for allow_always / reject_always the rule to
+   * create (exact, pattern, `folder/**` or `*` for the entire tool; session
+   * scope), otherwise an `invocation`-scoped consent, plus the deny reason.
+   * After an entire-tool rule, approvals already waiting for the same tool
+   * are answered too (the engine doesn't re-check them).
+   */
+  respondToApproval(requestId: RpcId, answer: string | ApprovalAnswer): void {
+    const a: ApprovalAnswer = typeof answer === "string" ? { optionId: answer } : answer;
+    const req = this.pendingPermissions.get(requestId);
+    const kind = req?.options.find((o) => o.optionId === a.optionId)?.kind ?? "";
+    const result: Record<string, unknown> = { outcome: { outcome: "selected", optionId: a.optionId } };
+    // Throws for an invalid folder, leaving the request pending.
+    const meta = req ? consentMeta(req, kind, a) : undefined;
+    this.pendingPermissions.delete(requestId);
+    if (meta) {
+      result._meta = meta;
+    }
+    this.sendResponse(requestId, result);
+
+    const always = kind === "allow_always" || kind === "reject_always";
+    if (req?.capability && always && a.rule === "tool") {
+      this.resolveWaiting(req, kind === "allow_always");
+    }
+  }
+
+  /** Answer other waiting approvals for the same tool after an entire-tool rule. */
+  private resolveWaiting(rule: ApprovalRequest, allow: boolean): void {
+    const group = (r: ApprovalRequest): string =>
+      [isShell(r.capability) ? "shell" : r.capability, r.workspaceRoot ?? "", r.sessionId ?? ""].join("\0");
+    const key = group(rule);
+    for (const [id, req] of [...this.pendingPermissions]) {
+      if (!req.capability || group(req) !== key) {
+        continue;
+      }
+      const opt = req.options.find((o) => o.kind === (allow ? "allow_once" : "reject_once"));
+      if (!opt) {
+        continue;
+      }
+      this.respondToApproval(id, { optionId: opt.optionId });
+      this.emit("event", {
+        kind: "approvalResolved",
+        toolCallId: req.toolCallId,
+        requestId: id,
+        allowed: allow,
+        label: `${allow ? "Allowed" : "Denied"} by rule: entire tool${rule.tool ? ` (${rule.tool})` : ""}`,
+      } as ChatEvent);
+    }
   }
 
   /**
@@ -234,9 +314,21 @@ export class AcpClient extends EventEmitter {
   }
 
   dispose(): void {
+    this.pendingPermissions.clear();
     this.rejectAllPending(new Error("disposed"));
-    this.child?.kill("SIGTERM");
+    const child = this.child;
     this.child = undefined;
+    if (child && !this.exited) {
+      child.kill("SIGTERM");
+      // Don't leave an engine behind if it ignores SIGTERM.
+      const timer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, KILL_AFTER_MS);
+      timer.unref();
+      child.once("exit", () => clearTimeout(timer));
+    }
   }
 
   // --- internals ---
@@ -275,7 +367,7 @@ export class AcpClient extends EventEmitter {
     }
 
     // Server-initiated request (e.g. permission prompt) — has id + method.
-    if (typeof m.id === "number" && typeof m.method === "string") {
+    if ((typeof m.id === "number" || typeof m.id === "string") && typeof m.method === "string") {
       this.handleServerRequest(m.id, m.method, m.params);
       return;
     }
@@ -286,19 +378,10 @@ export class AcpClient extends EventEmitter {
     }
   }
 
-  private handleServerRequest(id: number, method: string, params: unknown): void {
+  private handleServerRequest(id: RpcId, method: string, params: unknown): void {
     if (method === "session/request_permission") {
-      const p = (params ?? {}) as Record<string, unknown>;
-      const toolCall = (p.toolCall ?? {}) as Record<string, unknown>;
-      const options = Array.isArray(p.options) ? p.options : [];
-      const mapped = options.map((o) => {
-        const r = (o ?? {}) as Record<string, unknown>;
-        return {
-          optionId: String(r.optionId ?? ""),
-          name: String(r.name ?? ""),
-          kind: String(r.kind ?? ""),
-        };
-      });
+      const request = mapPermissionRequest(params);
+      const mapped = request.options;
 
       // Autopilot (client-side): auto-approve by selecting an allow option.
       if (this.autoApprove) {
@@ -307,27 +390,21 @@ export class AcpClient extends EventEmitter {
           mapped.find((o) => o.kind.startsWith("allow")) ??
           mapped[0];
         if (allow) {
-          this.sendResponse(id, {
-            outcome: { outcome: "selected", optionId: allow.optionId },
-          });
+          this.sendResponse(id, { outcome: { outcome: "selected", optionId: allow.optionId } });
           return;
         }
       }
 
-      this.emit("event", {
-        kind: "approvalRequest",
-        request: {
-          toolCallId: String(toolCall.toolCallId ?? p.toolCallId ?? ""),
-          question: String(p.question ?? toolCall.title ?? "Approve tool?"),
-          options: mapped,
-        },
-      } as ChatEvent);
+      this.pendingPermissions.set(id, request);
+      this.emit("event", { kind: "approvalRequest", request, requestId: id } as ChatEvent);
       // The caller answers via respondToApproval(id, optionId).
       this.emit("permissionRequest", id, params);
       return;
     }
-    // Unknown server request: respond with empty result to avoid stalling.
-    this.sendResponse(id, {});
+    // Not something this client implements (we advertise no fs/terminal
+    // capabilities): answer "method not found" so the engine doesn't wait.
+    this.emit("log", `unsupported engine request: ${method}`);
+    this.write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
   }
 
   private handleNotification(method: string, params: unknown): void {
@@ -354,20 +431,45 @@ export class AcpClient extends EventEmitter {
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      if (!this.canWrite()) {
+        reject(new Error("The Kiro engine isn't running."));
+        return;
+      }
+      const ms = this.opts.timeoutsMs?.[method] ?? TIMEOUTS_MS[method];
+      const timer = ms
+        ? setTimeout(() => {
+            if (this.pending.delete(id)) {
+              reject(new Error(`The Kiro engine didn't answer ${method} within ${Math.round(ms / 1000)}s.`));
+            }
+          }, ms)
+        : undefined;
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
       this.write(payload);
     });
   }
 
-  private sendResponse(id: number, result: unknown): void {
+  private sendResponse(id: RpcId, result: unknown): void {
     this.write({ jsonrpc: "2.0", id, result });
   }
 
+  private canWrite(): boolean {
+    return !!this.child && !this.exited && this.child.stdin.writable;
+  }
+
   private write(obj: unknown): void {
-    if (!this.child) {
+    if (!this.canWrite()) {
       return;
     }
-    this.child.stdin.write(JSON.stringify(obj) + "\n");
+    this.child?.stdin.write(JSON.stringify(obj) + "\n");
   }
 
   private rejectAllPending(err: Error): void {
@@ -376,4 +478,43 @@ export class AcpClient extends EventEmitter {
     }
     this.pending.clear();
   }
+}
+
+/**
+ * The response `_meta` for an approval answer, as the kiro-cli TUI builds it.
+ * Throws if a folder rule's folder isn't valid (the UIs check it first).
+ */
+export function consentMeta(req: ApprovalRequest, kind: string, a: ApprovalAnswer): Record<string, unknown> | undefined {
+  const reason = kind === "reject_once" ? cleanReason(a.reason) : undefined;
+  if (!req.capability) {
+    // The engine reads a deny reason even without consent info.
+    return reason ? { kiro: { rejectionReason: reason } } : undefined;
+  }
+  const always = kind === "allow_always" || kind === "reject_always";
+  const rules = kind === "allow_always" ? req.allowRules : kind === "reject_always" ? req.denyRules : undefined;
+  const rule = always && a.rule ? rules?.find((r) => r.kind === a.rule) : undefined;
+  let resource: string | undefined;
+  if (rule?.kind === "folder" && rule.folder) {
+    const check = checkFolder(rule.folder, a.folder ?? rule.folder.prefill);
+    if (!check.ok) {
+      throw new Error(check.reason);
+    }
+    resource = folderResource(check.path);
+  } else if (rule) {
+    resource = rule.resource;
+  }
+  // allow_always always saves a session rule (exact when no resource);
+  // reject_always only with a resource; anything else is this call only.
+  const scope = kind === "allow_always" || (always && resource) ? "session" : "invocation";
+  return {
+    kiro: {
+      consent: {
+        capability: req.capability,
+        scope,
+        ...(resource ? { resource } : {}),
+        ...(req.workspaceRoot ? { workspaceRoot: req.workspaceRoot } : {}),
+      },
+      ...(reason ? { rejectionReason: reason } : {}),
+    },
+  };
 }

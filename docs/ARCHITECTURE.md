@@ -39,7 +39,8 @@ extension.ts ── activates, registers commands, status bar, terminal profile
 │    ├─ ansi.ts              escape helpers, width/fit/wrap
 │    └─ imagePaths.ts        finds dragged image paths in a prompt
 │
-├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals, ext methods
+├─ acpClient.ts      ACP transport: spawn, JSON-RPC, approvals (+ consent rules), ext methods
+├─ approvalRules.ts  approval rule choices + folder checks (shared with the webview)
 ├─ eventMapper.ts    engine updates → normalized ChatEvent (types.ts)
 ├─ jsonLineParser.ts newline-delimited JSON, tolerant of non-JSON lines
 ├─ oneShotRunner.ts  fallback: `kiro-cli chat --output-format stream-json` per turn
@@ -80,15 +81,9 @@ module.
 7. Closing a tab disposes its session and kills its engine. The conversation
    stays on disk and appears under Resume.
 
-Messages the webview sends: `ready`, `sendPrompt`, `approve`, `newSession`,
-`resumeSession`, `loadSession`, `restart`, `newTab`, `setMode`, `setConfig`,
-`login`, `getContextBreakdown`, `compact`, `attachPaths`, `pickAttachment`,
-`debugLog`.
-
-Messages it receives: `status`, `ready`, `needLogin`, `fatal`, `error`,
-`notice`, `event`, `cleared`, `restarting`, `userMessage`, `sessionList`,
-`sessionListLoading`, `contextBreakdown`, `compactDone`, `attachImage`,
-`insertPaths`, `openResume`.
+The webview's messages are handled in `ChatSession.handleMessage` (the
+`switch` on `msg.type`) and `webview/main.ts` (the `message` listener); those
+are the source of truth for the message names.
 
 ## Terminal chat
 
@@ -112,8 +107,15 @@ Transport:
   `session/update` notifications before it returns, so the UI is cleared first.
   Loading an unknown session ID doesn't fail; the client then has an empty
   session.
-- `session/prompt` resolves when the turn ends. `session/cancel` (a
-  notification) stops it with `stopReason: "cancelled"`.
+- `session/prompt` resolves when the turn ends with a `stopReason`
+  (`end_turn`, `cancelled`, `refusal`, …); the client reports it in
+  `runFinished` and always emits `runFinished`, also when the request fails.
+  `session/cancel` (a notification) stops it with `stopReason: "cancelled"`.
+- Request timeouts: `initialize`/`session/new` 120 s, `session/load` 180 s,
+  `set_mode`/`set_config_option` 30 s. `session/prompt` and extension methods
+  have none. `dispose()` sends SIGTERM, then SIGKILL after 3 s.
+- The client advertises no `fs` or `terminal` capabilities, so the engine
+  uses its own. Any other engine request gets JSON-RPC `-32601`.
 - `session/set_mode` switches mode (vibe/plan/…). `session/set_config_option`
   sets `model`, `autopilot` (`on`/`off`), `effortLevel`, `memoryReflection`,
   `contentCollection`. Setting `model` to an invalid name isn't rejected.
@@ -129,8 +131,41 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   `user_message_id_assigned` (the ID `/rewind` reverts to),
   `pending_interaction` (tool approval), `focus_update` (title and status).
 - Tool approvals arrive as the server request `session/request_permission`
-  with options `accept`, `always-accept`, `reject`, `always-reject`. The
-  client answers with the chosen `optionId`.
+  with options `accept`, `always-accept`, `reject`, `always-reject` and
+  `_meta.kiro.consent` (`capability` such as `fs_read`, `fs_write`, `shell`,
+  `web_fetch`, `mcp`; `resource`; `workspaceRoot`). A compound shell line is
+  asked once per command: same `toolCallId` and title, with
+  `consent.triggeringResource` (the command) and `consentRound` (1, 2, …).
+- The client answers with the chosen `optionId` and a response
+  `_meta.kiro`: `consent: {capability, scope, resource?, workspaceRoot?}`
+  and, for deny-once, `rejectionReason` (the engine reads it even without
+  consent and passes it to the agent; verified). `scope` is `session` |
+  `workspace` | `user` | `invocation`. Without a `resource`, allow-always
+  saves a session rule for the exact file/command only.
+- The approval UI follows the kiro-cli TUI (`tui.js`): Allow / Create allow
+  rule… / Deny / Deny with reason / Create deny rule…. The rule list
+  (`approvalRules.ts` `buildRules`) is exact match, command pattern (shell:
+  `cat *`), folder (file changes, allow only: an editable folder, checked
+  like the TUI by `checkFolder`, sent as `folder/**`) and entire tool
+  (`*`). Allow-once sends `scope: "invocation"`. Rules are always `session`
+  scope here (the TUI can also save `workspace`/`user` rules; not
+  implemented). Unlike the TUI, one-word commands also get the pattern
+  (`head` → `head *`); the engine's `head *` matches a bare `head`.
+- After an entire-tool rule, `AcpClient` answers other approvals already
+  waiting for that tool (same capability, workspace and session) with
+  allow/deny once and emits `approvalResolved`, as the TUI does; the engine
+  doesn't re-check them.
+- Verified live: after "cat \*" another `cat` isn't asked but `ls` is; after
+  "head \*" neither `head` nor `head -3`; entire tool on command 1 of
+  `find …; ls` skips `ls`; after a `src/**` folder rule a write to
+  `src/two.txt` isn't asked but `lib/three.txt` is. The resource must cover
+  the command being asked about, or the engine asks again (in a loop).
+- `_meta.kiro.trustClassifier: {decision: "prompt", reason}` is the reason a
+  person should look at the call; shown on the card.
+- The engine decides per command whether to ask at all (e.g. `wc`, or `head`
+  after `echo`, aren't asked).
+- File writes are followed by a separate "Review changes" approval with only
+  Allow/Deny and no consent info.
 - Other notifications seen: `_kiro/mcp/status` (`servers: []` when none),
   `_kiro/tools/didChange` (built-in tool tags), `_kiro/memory/syncStatus`.
 
@@ -162,12 +197,26 @@ Context breakdown (`_kiro/session/context` `show`):
 Other CLI calls (`detect.ts`):
 - `kiro-cli whoami --format json` — login check.
 - `kiro-cli chat --help` — lists engines. Each is health-checked headless,
-  newest first; the result is cached.
+  newest first; the result is cached per binary for all chats until Restart.
+  If none runs, start fails with an error (no fallback).
 - `kiro-cli chat --list-models --format json` — models (`model_id`, context
   window, rate multiplier).
 - `kiro-cli chat --list-sessions --format json` — sessions for Resume
   (filtered to this engine and folder, newest first).
 - `kiro-cli login` runs in an integrated terminal.
+
+## Security
+
+- `kiroCliChat.kiroCliPath` is `machine` scoped: a workspace's
+  `.vscode/settings.json` can't make the extension run another binary. A set
+  path must be an executable file.
+- `capabilities.untrustedWorkspaces` is `limited`: in Restricted Mode VS Code
+  ignores workspace values of `autopilot`, `defaultEngine` and
+  `interactionMode`.
+- The webview CSP is `default-src 'none'`, scripts by nonce, styles only from
+  the extension's CSS file (no inline styles).
+- Dropped/picked images are read only from absolute paths with an image
+  extension, up to 10 MB, and the bytes must be a PNG, JPEG, GIF or WebP.
 
 ## Build and package
 
@@ -176,6 +225,7 @@ Other CLI calls (`detect.ts`):
 - `tsconfig.test.json` compiles everything except `extension.ts` and the
   webview entry to `dist-test/` for `node --test`.
 - `.vscodeignore` keeps sources, tests and docs out of the `.vsix`.
+- `npm run package` uses the pinned `@vscode/vsce` devDependency.
 
 ## Known limits
 

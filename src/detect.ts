@@ -120,17 +120,34 @@ export async function resolveEngine(
   if (setting !== "auto") {
     return setting;
   }
+  // Health checks start engine processes; do them once per binary, shared by
+  // every chat tab and terminal.
+  const cached = autoEngines.get(cliPath);
+  if (cached) {
+    log(`Using engine ${cached} (detected earlier).`);
+    return cached;
+  }
   const engines = await listEngines(cliPath);
   for (const e of engines) {
     log(`Health-checking engine ${e}...`);
     if (await engineHealthy(cliPath, e)) {
       log(`Selected engine ${e}.`);
+      autoEngines.set(cliPath, e);
       return e;
     }
     log(`Engine ${e} failed health check; trying next.`);
   }
-  // Last resort: oldest.
-  return "v1";
+  throw new Error(
+    `No Kiro engine runs on this machine (tried ${engines.join(", ")}). ` +
+      `Check that "${cliPath} chat --agent-engine v3" works, and see the Kiro CLI Chat output for details.`
+  );
+}
+
+const autoEngines = new Map<string, EngineVersion>();
+
+/** Forget detected engines (e.g. after kiro-cli was updated). */
+export function resetEngineCache(): void {
+  autoEngines.clear();
 }
 
 /** List available models via `chat --list-models --format json`. */

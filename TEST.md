@@ -12,15 +12,18 @@ npm run lint      # eslint, must report nothing
 npm test          # builds dist-test/ and runs node --test
 ```
 
-All three must exit 0. The tests cover the event mapper, JSON line parser,
-markdown (HTML and ANSI), line diff, line editor, slash-command parsing and
-menu, image-path detection, and the chat-tab manager (with a fake `vscode`).
+All three must exit 0. The tests cover the event mapper, approval rules,
+JSON line parser, markdown (HTML and ANSI), line diff, line editor,
+slash-command parsing and menu, image-path detection, the chat-tab manager
+(with a fake `vscode`), and `AcpClient` against a fake engine process
+(handshake, timeouts, cancelled turns, unknown requests, the engine dying).
+CI (`.github/workflows/ci.yml`) runs them plus `npm run package` on every
+push and pull request.
 
 ## Install
 
 ```sh
-npm run build
-npx @vscode/vsce package --no-dependencies
+npm run package   # builds and writes kiro-cli-chat-<version>.vsix
 code --install-extension kiro-cli-chat-0.1.0.vsix --force
 ```
 
@@ -29,9 +32,9 @@ Then run **Developer: Reload Window**.
 ## Manual checks
 
 ### Opening chats
-- [ ] `Cmd+Shift+K` and the **Kiro Chat** status-bar item open a chat tab.
+- [ ] `Cmd+Alt+K` and the **Kiro Chat** status-bar item open a chat tab. `Cmd+Shift+K` still deletes the line in an editor.
 - [ ] With `openIn` = `panel`, they open the bottom-panel chat instead.
-- [ ] Pressing `Cmd+Shift+K` again brings the same tab forward; it doesn't open another.
+- [ ] Pressing `Cmd+Alt+K` again brings the same tab forward; it doesn't open another.
 - [ ] ＋ (right of Restart) and **New Chat Tab** open "Kiro Chat 2", "Kiro Chat 3", …
 - [ ] A prompt in one tab gets its reply only in that tab. The panel chat is separate too.
 - [ ] Closing a tab stops its engine (`pgrep -fl "kiro-cli.*acp"` count drops).
@@ -70,7 +73,14 @@ Then run **Developer: Reload Window**.
 - [ ] Dragging a non-image file from the Explorer inserts its path.
 
 ### Approvals
-- [ ] With `autopilot` off, a file write shows a card with Allow / Always allow / Deny / Always deny.
+- [ ] With `autopilot` off, a file write shows a card with Allow / Create allow rule… / Deny / Deny with reason… / Create deny rule….
+- [ ] Create allow rule on a file read outside the workspace lists `Trust "<file>"` and `Trust entire tool (Read File)`. Entire tool → reading a second file doesn't ask.
+- [ ] A shell command lists `Trust "<command>"`, `Trust "cat *"` and `Trust entire tool (Run Command)`. After "cat \*", another `cat` doesn't ask but `ls` does.
+- [ ] On `find …; ls`, entire tool for command 1 means `ls` isn't asked.
+- [ ] A write to `src/a/x.txt` offers "Allow a folder for this session…" prefilled with `src/a`. Change it to `src` → a write to `src/y.txt` only shows Review changes; `lib/z.txt` asks. `..`, `~`, `*` or a folder not containing the file show an error.
+- [ ] Deny with reason: type "use rg instead" → the agent's reply reflects it.
+- [ ] Back returns from the rule list and the text fields; Esc in a text field does too.
+- [ ] `cat a; echo b` asks twice, each card naming its command ("Command 1: …", "Command 2: …").
 - [ ] Allow applies the change; Deny skips it.
 - [ ] With `autopilot` on, tools run without asking.
 
@@ -88,8 +98,18 @@ Then run **Developer: Reload Window**.
 - [ ] `/` shows the menu; ↑/↓, Tab, Enter and Esc work; it fits narrow terminals.
 - [ ] `/help` lists all commands; unknown `/foo` isn't sent to the model.
 - [ ] Spot-check: `/context show`, `/compact`, `/usage`, `/model`, `/rewind` (asks first), `/title`, `/spawn`, `/resume`.
-- [ ] Approvals take `y` / `a` / `n`. Esc cancels a reply.
+- [ ] Approvals take `y` / `n` / Tab (reason) / `t` (allow rule) / `d` (deny rule); rules are picked by number, Esc goes back. Compound lines name the command. Esc cancels a reply.
+- [ ] The folder rule's input is prefilled and editable (Backspace, Ctrl+U); an invalid folder prints the reason and asks again.
 
 ### Startup errors
 - [ ] With an invalid `kiroCliPath`, the chat shows a clear error.
 - [ ] Logged out (`kiro-cli logout`), the chat offers a login button.
+
+### Untrusted workspaces
+- [ ] Open a folder whose `.vscode/settings.json` sets `kiroCliChat.kiroCliPath` and `kiroCliChat.autopilot: true`. VS Code reports `kiroCliPath` as a machine setting that a workspace can't set; the chat uses the user-level path.
+- [ ] Choose "Don't Trust" (Restricted Mode): the chat still works, and approvals are still asked (the workspace `autopilot` is ignored).
+
+### Engine failures
+- [ ] Set `kiroCliChat.kiroCliPath` to a file that doesn't exist → the chat says the setting points to a missing file.
+- [ ] Start a long reply, then `pkill -f "kiro-cli-chat acp"` → the chat says the engine exited, leaves the busy state, and Restart works.
+- [ ] Esc / Stop during a reply → the terminal footer shows "■ Cancelled".

@@ -3,7 +3,7 @@
 // so the result is cached and reused by every terminal. No vscode import.
 
 import { resolveCliPath } from "./cli";
-import { checkAuth, resolveEngine } from "./detect";
+import { checkAuth, resetEngineCache, resolveEngine } from "./detect";
 import { EngineSetting, EngineVersion } from "./types";
 
 export interface PreparedEngine {
@@ -54,4 +54,5 @@ export function prepareEngine(
 /** Forget the cached result (e.g. on /restart after changing settings). */
 export function resetPreparedEngine(): void {
   cache = undefined;
+  resetEngineCache();
 }

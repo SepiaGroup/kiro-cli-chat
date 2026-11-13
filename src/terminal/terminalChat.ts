@@ -7,11 +7,15 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { AcpClient } from "../acpClient";
+import { checkFolder, truncate as shorten } from "../approvalRules";
 import { readConfig } from "../config";
 import { listSessions } from "../detect";
 import { NotLoggedInError, prepareEngine, resetPreparedEngine } from "../enginePrep";
 import {
+  ApprovalAnswer,
+  ApprovalOption,
   ApprovalRequest,
+  RpcId,
   AvailableCommand,
   ChatEvent,
   ConfigOption,
@@ -20,7 +24,7 @@ import {
   ToolDiff,
 } from "../types";
 import { diffLines } from "../webview/lineDiff";
-import { crlf, fitAnsi, sanitize, stripAnsi, style, term } from "./ansi";
+import { crlf, fitAnsi, sanitize, stripAnsi, style, term, visibleWidth } from "./ansi";
 import { MarkdownStream } from "./ansiMarkdown";
 import { findImagePaths, imageMimeForPath } from "./imagePaths";
 import { LineEditor } from "./lineEditor";
@@ -49,10 +53,18 @@ interface ToolState {
   done: boolean;
 }
 
+/**
+ * An approval being answered. Like the kiro-cli TUI: a first screen
+ * (y / n / Tab for a reason / t allow rule / d deny rule), a rule screen,
+ * and text input for a folder rule or a deny reason.
+ */
 interface PendingApproval {
   request: ApprovalRequest;
-  requestId?: number;
-  keys: Map<string, string>; // key → optionId
+  requestId?: RpcId;
+  page: "main" | "allow" | "deny" | "folder" | "reason";
+  input: string;
+  /** Characters on screen for the input line, to redraw it. */
+  drawn: number;
 }
 
 export class TerminalChat implements vscode.Pseudoterminal {
@@ -89,7 +101,8 @@ export class TerminalChat implements vscode.Pseudoterminal {
   private readonly tools = new Map<string, ToolState>();
   private lastToolId?: string;
   private approval?: PendingApproval;
-  private readonly earlyRequestIds = new Map<string, number>();
+  /** Approvals that arrived while another was being answered. */
+  private approvalQueue: PendingApproval[] = [];
   private lastSessions: SessionSummary[] = [];
   private toolGroups: Array<{ tag: string; description: string }> = [];
   private lastInterrupt = 0;
@@ -292,22 +305,12 @@ export class TerminalChat implements vscode.Pseudoterminal {
         }
       }
     });
-    client.on("permissionRequest", (requestId: number, params: unknown) => {
-      const p = (params ?? {}) as Record<string, unknown>;
-      const toolCall = (p.toolCall ?? {}) as Record<string, unknown>;
-      const id = String(toolCall.toolCallId ?? p.toolCallId ?? "");
-      if (this.approval && this.approval.request.toolCallId === id) {
-        this.approval.requestId = requestId;
-      } else {
-        this.earlyRequestIds.set(id, requestId);
-      }
-    });
     client.on("exit", (code: number | null) => {
       if (this.client !== client || this.isClosed()) {
         return;
       }
       this.client = undefined;
-      this.approval = undefined;
+      this.clearApprovals();
       this.endAssistant();
       this.print(style.red(`Engine exited (code ${String(code)}).`) + style.gray(" Type /restart to start it again."));
     });
@@ -363,7 +366,10 @@ export class TerminalChat implements vscode.Pseudoterminal {
         this.onToolUpdate(ev);
         break;
       case "approvalRequest":
-        this.showApproval(ev.request);
+        this.queueApproval(ev.request, ev.requestId);
+        break;
+      case "approvalResolved":
+        this.onApprovalResolved(ev);
         break;
       case "contextUsage":
         this.usagePct = ev.usagePercentage;
@@ -500,66 +506,283 @@ export class TerminalChat implements vscode.Pseudoterminal {
 
   // --- approvals ---
 
-  private showApproval(request: ApprovalRequest): void {
+  private clearApprovals(): void {
+    this.approval = undefined;
+    this.approvalQueue = [];
+  }
+
+  private queueApproval(request: ApprovalRequest, requestId?: RpcId): void {
+    const pending: PendingApproval = { request, requestId, page: "main", input: "", drawn: 0 };
+    if (this.approval) {
+      this.approvalQueue.push(pending);
+      return;
+    }
+    this.approval = pending;
     this.endAssistant();
-    const keys = new Map<string, string>();
-    const preferred: Record<string, string> = {
-      allow_once: "y",
-      allow_always: "a",
-      reject_once: "n",
-      reject_always: "x",
-    };
-    request.options.forEach((o, idx) => {
-      let key = preferred[o.kind];
-      if (!key || keys.has(key)) {
-        key = String(idx + 1);
-      }
-      keys.set(key, o.optionId);
+    this.showApproval();
+  }
+
+  /** Answered by a rule created for another approval (entire tool). */
+  private onApprovalResolved(ev: Extract<ChatEvent, { kind: "approvalResolved" }>): void {
+    const before = this.approvalQueue.length;
+    const q = this.approvalQueue.find((a) => a.requestId === ev.requestId);
+    this.approvalQueue = this.approvalQueue.filter((a) => a.requestId !== ev.requestId);
+    if (q && this.approvalQueue.length < before) {
+      const mark = ev.allowed ? style.green("✓") : style.red("✗");
+      this.print(`  ${mark} ${style.gray(sanitize(ev.label) + ": ")}${sanitize(q.request.part ?? q.request.question)}`);
+    }
+  }
+
+  private nextApproval(): void {
+    this.approval = this.approvalQueue.shift();
+    if (this.approval) {
+      this.showApproval();
+    }
+  }
+
+  private approvalOption(kind: string): ApprovalOption | undefined {
+    return this.approval?.request.options.find((o) => o.kind === kind);
+  }
+
+  /** First screen: the question and y / n / Tab / t / d. */
+  private showApproval(): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    const r = a.request;
+    const key = (k: string, label: string): string => `${style.bold(style.cyan(`[${k}]`))} ${label}`;
+    const choices: string[] = [];
+    const allow = this.approvalOption("allow_once");
+    const deny = this.approvalOption("reject_once");
+    const allowRule = this.approvalOption("allow_always");
+    const denyRule = this.approvalOption("reject_always");
+    // Allow choices first, then deny choices.
+    if (allow) {
+      choices.push(key("y", sanitize(allow.name || "Allow")));
+    }
+    if (allowRule) {
+      choices.push(key("t", sanitize(allowRule.name)));
+    }
+    if (deny) {
+      choices.push(key("n", sanitize(deny.name || "Deny")), key("Tab", "Deny with reason"));
+    }
+    if (denyRule) {
+      choices.push(key("d", sanitize(denyRule.name)));
+    }
+    const lines = [style.yellow("? ") + style.bold(sanitize(r.question))];
+    // A compound shell line is approved one command at a time; say which.
+    if (r.part) {
+      lines.push("  " + style.gray(r.round ? `command ${r.round}: ` : "command: ") + style.bold(sanitize(r.part)));
+    }
+    if (r.flag) {
+      lines.push("  " + style.yellow("! ") + style.gray(sanitize(r.flag)));
+    }
+    lines.push("  " + choices.join("  "));
+    this.print(lines.join("\n"));
+  }
+
+  /** Rule screen: numbered rules, like the TUI's "Create allow rule". */
+  private showRules(effect: "allow" | "deny"): void {
+    const r = this.approval?.request;
+    const rules = (effect === "allow" ? r?.allowRules : r?.denyRules) ?? [];
+    const what = r?.resource ? `: "${shorten(r.resource)}"` : r?.tool ? `: ${r.tool}` : "";
+    const width = Math.max(...rules.map((x) => x.label.length));
+    const lines = [style.bold(`  Create ${effect} rule${sanitize(what)}`)];
+    rules.forEach((rule, i) => {
+      lines.push(
+        `  ${style.bold(style.cyan(`[${i + 1}]`))} ${sanitize(rule.label.padEnd(width))}  ${style.gray(sanitize(rule.description))}`
+      );
     });
-    const choices = [...keys.entries()]
-      .map(([k, id]) => {
-        const o = request.options.find((x) => x.optionId === id);
-        return `${style.bold(style.cyan(`[${k}]`))} ${sanitize(o?.name ?? id)}`;
-      })
-      .join("  ");
-    this.print(style.yellow("? ") + style.bold(sanitize(request.question)) + "\n  " + choices);
-    this.approval = {
-      request,
-      requestId: this.earlyRequestIds.get(request.toolCallId),
-      keys,
-    };
-    this.earlyRequestIds.delete(request.toolCallId);
+    lines.push("  " + style.gray("Esc to go back"));
+    this.print(lines.join("\n"));
+  }
+
+  private startInput(page: "folder" | "reason", initial: string): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    a.page = page;
+    a.input = initial;
+    a.drawn = 0;
+    this.drawInput();
+  }
+
+  private inputPrefix(): string {
+    return this.approval?.page === "folder"
+      ? "  " + style.gray("Folder to allow (Enter to allow, Esc to go back): ")
+      : "  " + style.gray("Reason (Enter to deny, Esc to go back): ");
+  }
+
+  /** Redraw the input line(s) in place. */
+  private drawInput(): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    const prefix = this.inputPrefix();
+    const text = prefix + sanitize(a.input);
+    let out = "";
+    if (a.drawn > 0) {
+      const rows = Math.ceil(a.drawn / Math.max(1, this.cols));
+      out += rows > 1 ? `\x1b[${rows - 1}A` : "";
+      out += "\r\x1b[J";
+    }
+    a.drawn = visibleWidth(text) || 1;
+    this.write(out + text);
+  }
+
+  private handleInputKey(data: string): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    if (data === "\x1b" || data === "\x03") {
+      // Back to the screen this input came from.
+      this.write("\r\n");
+      if (a.page === "folder") {
+        a.page = "allow";
+        this.showRules("allow");
+      } else {
+        a.page = "main";
+        this.showApproval();
+      }
+      return;
+    }
+    if (data.startsWith("\x1b")) {
+      return; // arrows etc.: not supported in this one-line input
+    }
+    for (const ch of data) {
+      if (ch === "\r" && data.length === 1) {
+        this.write("\r\n");
+        this.submitInput();
+        return;
+      }
+      if (ch === "\x7f" || ch === "\b") {
+        a.input = Array.from(a.input).slice(0, -1).join("");
+      } else if (ch === "\x15") {
+        a.input = "";
+      } else if (ch === "\r" || ch === "\n" || ch === "\t") {
+        a.input += " ";
+      } else if (ch >= " ") {
+        a.input += ch;
+      }
+    }
+    this.drawInput();
+  }
+
+  private submitInput(): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    if (a.page === "reason") {
+      const deny = this.approvalOption("reject_once");
+      if (deny) {
+        const reason = a.input.trim();
+        this.answer({ optionId: deny.optionId, reason }, reason ? `Deny: ${reason}` : deny.name || "Deny", false);
+      }
+      return;
+    }
+    const rule = a.request.allowRules?.find((r) => r.kind === "folder");
+    const opt = this.approvalOption("allow_always");
+    if (!rule?.folder || !opt) {
+      return;
+    }
+    const check = checkFolder(rule.folder, a.input);
+    if (!check.ok) {
+      this.print("  " + style.red(check.reason));
+      this.drawInput();
+      return;
+    }
+    this.answer({ optionId: opt.optionId, rule: "folder", folder: check.path }, `Trust folder ${check.path} and everything under it`, true);
   }
 
   private handleApprovalKey(data: string): void {
-    const approval = this.approval;
-    if (!approval) {
+    const a = this.approval;
+    if (!a) {
       return;
     }
-    let optionId: string | undefined;
-    if (data === "\x03" || data === "\x1b") {
-      // Ctrl+C / Esc = reject.
-      optionId =
-        approval.request.options.find((o) => o.kind === "reject_once")?.optionId ??
-        approval.request.options.find((o) => o.kind.startsWith("reject"))?.optionId;
-    } else {
-      optionId = approval.keys.get(data.toLowerCase()) ?? approval.keys.get(data);
-    }
-    if (!optionId) {
-      this.write("\x07");
+    if (a.page === "folder" || a.page === "reason") {
+      this.handleInputKey(data);
       return;
     }
-    if (approval.requestId === undefined || !this.client) {
+    const k = data.length === 1 ? data.toLowerCase() : data;
+    if (a.page === "allow" || a.page === "deny") {
+      if (k === "\x1b" || k === "\x03") {
+        a.page = "main";
+        this.showApproval();
+        return;
+      }
+      const effect = a.page;
+      const rules = (effect === "allow" ? a.request.allowRules : a.request.denyRules) ?? [];
+      const rule = /^[1-9]$/.test(k) ? rules[Number(k) - 1] : undefined;
+      const opt = this.approvalOption(effect === "allow" ? "allow_always" : "reject_always");
+      if (!rule || !opt) {
+        this.write("\x07");
+        return;
+      }
+      if (rule.kind === "folder" && rule.folder) {
+        this.startInput("folder", rule.folder.prefill);
+        return;
+      }
+      this.answer({ optionId: opt.optionId, rule: rule.kind }, rule.label, effect === "allow");
+      return;
+    }
+    // First screen.
+    if (k === "\x03" || k === "\x1b" || k === "n") {
+      const deny = this.approvalOption("reject_once") ?? this.approvalOption("reject_always");
+      if (deny) {
+        this.answer({ optionId: deny.optionId }, deny.name || "Deny", false);
+      }
+      return;
+    }
+    if (k === "\t" && this.approvalOption("reject_once")) {
+      this.startInput("reason", "");
+      return;
+    }
+    if (k === "y" && this.approvalOption("allow_once")) {
+      const o = this.approvalOption("allow_once") as ApprovalOption;
+      this.answer({ optionId: o.optionId }, o.name || "Allow", true);
+      return;
+    }
+    const effect = k === "t" ? "allow" : k === "d" ? "deny" : undefined;
+    const opt = effect && this.approvalOption(effect === "allow" ? "allow_always" : "reject_always");
+    if (effect && opt) {
+      const rules = effect === "allow" ? a.request.allowRules : a.request.denyRules;
+      if (rules?.length) {
+        a.page = effect;
+        this.showRules(effect);
+      } else {
+        this.answer({ optionId: opt.optionId }, opt.name, effect === "allow");
+      }
+      return;
+    }
+    this.write("\x07");
+  }
+
+  /** Send the answer, print it, and show the next waiting approval. */
+  private answer(answer: ApprovalAnswer, label: string, allowed: boolean): void {
+    const a = this.approval;
+    if (!a) {
+      return;
+    }
+    if (a.requestId === undefined || !this.client) {
       this.print(style.red("  Can't answer this request (the engine isn't waiting for it any more)."));
-      this.approval = undefined;
+      this.nextApproval();
       return;
     }
-    this.client.respondToApproval(approval.requestId, optionId);
-    const chosen = approval.request.options.find((o) => o.optionId === optionId);
-    const isAllow = chosen?.kind.startsWith("allow");
-    const label = sanitize(chosen?.name ?? optionId);
+    try {
+      this.client.respondToApproval(a.requestId, answer);
+    } catch (err) {
+      this.print("  " + style.red(errorMessage(err)));
+      return;
+    }
     this.approval = undefined;
-    this.print("  " + (isAllow ? style.green(`→ ${label}`) : style.red(`→ ${label}`)));
+    const text = sanitize(label);
+    this.print("  " + (allowed ? style.green(`→ ${text}`) : style.red(`→ ${text}`)));
+    this.nextApproval();
   }
 
   // --- prompt submission ---
@@ -648,7 +871,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
     }
     this.endAssistant();
     this.stopSpinner();
-    this.approval = undefined;
+    this.clearApprovals();
     // "▸ Credits: 0.09 • Time: 2s" (like the Kiro CLI).
     const parts: string[] = [];
     // Set by "metering" events during the await above.
@@ -1128,7 +1351,7 @@ export class TerminalChat implements vscode.Pseudoterminal {
   private async restart(): Promise<void> {
     this.client?.dispose();
     this.client = undefined;
-    this.approval = undefined;
+    this.clearApprovals();
     this.configOptions = [];
     this.usagePct = undefined;
     this.updatePrompt();

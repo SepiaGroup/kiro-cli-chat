@@ -2,7 +2,7 @@
 // (whoami, --list-models, --help, health checks). Node-only; no vscode import.
 
 import { spawn, spawnSync } from "child_process";
-import { existsSync } from "fs";
+import { accessSync, constants, existsSync, statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -17,13 +17,18 @@ export function candidateCliPaths(): string[] {
 }
 
 /**
- * Resolve the kiro-cli path. If `configured` is set and exists, use it.
- * Otherwise try `kiro-cli` on PATH, then well-known locations.
- * Returns undefined if nothing is found.
+ * Resolve the kiro-cli path. If `configured` is set it must be an executable
+ * file (throws with a clear message otherwise). If not set, try `kiro-cli` on
+ * PATH, then well-known locations. Returns undefined if nothing is found.
  */
 export function resolveCliPath(configured?: string): string | undefined {
   if (configured && configured.trim().length > 0) {
-    return configured.trim();
+    const p = configured.trim();
+    const problem = executableProblem(p);
+    if (problem) {
+      throw new Error(`kiroCliChat.kiroCliPath is set to "${p}", which ${problem}. Fix or clear the setting.`);
+    }
+    return p;
   }
   // Try PATH via `command -v`.
   const onPath = spawnSync("bash", ["-lc", "command -v kiro-cli"], {
@@ -41,6 +46,20 @@ export function resolveCliPath(configured?: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Why `p` can't be run, or undefined if it can. */
+export function executableProblem(p: string): string | undefined {
+  try {
+    if (!statSync(p).isFile()) {
+      return "isn't a file";
+    }
+    accessSync(p, constants.X_OK);
+    return undefined;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" ? "doesn't exist" : code === "EACCES" ? "isn't executable" : `can't be used (${code ?? "error"})`;
+  }
 }
 
 export interface RunResult {
