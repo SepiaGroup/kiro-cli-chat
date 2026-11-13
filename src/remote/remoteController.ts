@@ -13,6 +13,7 @@ import { RemoteAsset, RemoteServer } from "./remoteServer";
 import { errorMessage } from "../format";
 
 const DEVICES_KEY = "kiroCliChat.remoteDevices";
+const PORT_KEY = "kiroCliChat.remotePort";
 
 export class RemoteController implements vscode.Disposable {
   private server?: RemoteServer;
@@ -90,7 +91,19 @@ export class RemoteController implements vscode.Disposable {
       log: (line) => this.log(line),
     });
     try {
-      this.port = await server.start(this.settings().get<number>("port", 0));
+      // The same port as last time when it is free, so a bookmark or an open page
+      // still finds the server after a restart.
+      const wanted = this.settings().get<number>("port", 0) || this.context.globalState.get<number>(PORT_KEY, 0);
+      try {
+        this.port = await server.start(wanted);
+      } catch (err) {
+        if (!wanted || (err as NodeJS.ErrnoException).code !== "EADDRINUSE") {
+          throw err;
+        }
+        this.log(`port ${wanted} is busy; picking another`);
+        this.port = await server.start(0);
+      }
+      void this.context.globalState.update(PORT_KEY, this.port);
     } catch (err) {
       this.log(`could not start: ${errorMessage(err)}`);
       void vscode.window.showErrorMessage(`Could not start remote access: ${errorMessage(err)}`);

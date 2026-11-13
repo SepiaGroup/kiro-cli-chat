@@ -188,7 +188,7 @@ machine settings, so a workspace cannot turn remote access on.
 | `kiroCliChat.shareEditorContext` | `false` | Tell the agent which files are open in the editor and which is active (paths only, files inside the chat's folder only). Sent with a prompt when it changed; the chat says so. Ignored in an untrusted workspace. |
 | `kiroCliChat.remote.autoStart` | `false` | Start remote access when VS Code starts. Machine setting. |
 | `kiroCliChat.remote.permissions` | `view`, `prompt`, `approve` | What a paired device may do: `view` chats, `prompt` (send, steer, stop, answer questions), `approve` (allow or deny once). Machine setting. |
-| `kiroCliChat.remote.port` | `0` | Local port for remote access (listens on 127.0.0.1 only); 0 picks a free one. Machine setting. |
+| `kiroCliChat.remote.port` | `0` | Local port for remote access (listens on 127.0.0.1 only). 0 reuses the port of last time when it is free, otherwise picks a free one, so an open page reconnects after a restart. Machine setting. |
 | `kiroCliChat.interactionMode` | `persistent` | `persistent` (ACP) is required for everything above. `one-shot` is a basic fallback with no approvals. |
 
 ## Troubleshooting

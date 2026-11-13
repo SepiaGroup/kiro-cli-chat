@@ -239,7 +239,7 @@
           "minimum": 0,
           "maximum": 65535,
           "scope": "machine",
-          "markdownDescription": "Local port for remote access (it only listens on 127.0.0.1). 0 picks a free port."
+          "markdownDescription": "Local port for remote access (it only listens on 127.0.0.1). 0 reuses the port of last time when it is free, otherwise picks a free one."
         }
       }
     },

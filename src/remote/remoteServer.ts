@@ -104,13 +104,18 @@ export class RemoteServer {
     const server = http.createServer((req, res) => void this.handle(req, res));
     server.requestTimeout = 0; // streams stay open; bodies are limited by size instead
     this.server = server;
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(port, host, () => {
-        server.off("error", reject);
-        resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, host, () => {
+          server.off("error", reject);
+          resolve();
+        });
       });
-    });
+    } catch (err) {
+      this.server = undefined; // so a retry (another port) is allowed
+      throw err;
+    }
     return (server.address() as AddressInfo).port;
   }
 
