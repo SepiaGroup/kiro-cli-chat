@@ -15,12 +15,10 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.test.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "src/extension.ts",
-    "src/webview/main.ts"
+    "dist"
   ]
 }
