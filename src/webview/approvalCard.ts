@@ -12,6 +12,11 @@ export function removeApprovalCard(toolCallId: string): boolean {
   return Boolean(card);
 }
 
+/** Remove every approval card still waiting: the reply ended, so nobody can answer them. */
+export function removeAllApprovalCards(): void {
+  messagesEl.querySelectorAll(".approval").forEach((card) => card.remove());
+}
+
 /**
  * An approval card, like the kiro-cli TUI: Allow / Deny / Deny with reason /
  * Create allow rule… / Create deny rule…. The rule buttons open a list of

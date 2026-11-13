@@ -103,6 +103,9 @@ export function webviewHtml(opts: WebviewHtmlOptions): string {
   <div id="cmd-hint" class="cmd-hint hidden"></div>
   <div id="attachments" class="attachments hidden" aria-label="Attached images"></div>
   <textarea id="input" rows="1" placeholder="Ask Kiro something…  (/ for commands)" aria-label="Message"></textarea>
+  <button id="btn-stop" class="hidden" title="Stop the reply (Esc)" aria-label="Stop the reply">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+  </button>
   <button id="btn-send" title="Send (Enter)" aria-label="Send">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg>
   </button>

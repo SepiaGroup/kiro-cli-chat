@@ -231,6 +231,11 @@ Events (`session/update` and `_meta.kiro`, mapped in `eventMapper.ts`):
   those rules to `errorAdvice.ts` and add the hint also for network and rate
   limit. Not verified live: the engine's exact errors for a lapsed login or a
   dropped connection.
+- Cancel: `session/cancel` (a notification) ends the turn with `stopReason`
+  `cancelled`, also while an approval is unanswered (verified live); the
+  session takes the next prompt. The unanswered approval is never answered, so
+  the client forgets it when the turn ends (otherwise the quiet-turn watchdog
+  would think it is waiting for the user) and the webview removes its card.
 - Steering: `_session/steer` `{sessionId, message, messageId?}` while a turn
   runs returns `{queued: true, messageId: "steer-<id>"}`. Updates arrive as
   `session_info_update` with `_meta.kiro.kind` `steering_queued`,

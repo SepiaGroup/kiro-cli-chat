@@ -73,6 +73,10 @@ Open Chat** opens the chat as an editor tab (set `kiroCliChat.openIn` to
   right away. It reads it at its next step (after a running tool call, not in
   the middle of one), and a line under your message says when. Images and `/`
   commands wait until the reply is done.
+- **Stopping a reply.** While the agent works, a **Stop** button appears next
+  to Send; Esc in the message box does the same. The reply ends with
+  "■ Cancelled" and any approval it was waiting on is dropped. The chat is
+  ready for your next message.
 - **Editor context (optional).** With `kiroCliChat.shareEditorContext` on, the
   agent is told which files are open in VS Code and which is active (paths
   only, inside the chat's folder). It is sent with a prompt when it changed,
