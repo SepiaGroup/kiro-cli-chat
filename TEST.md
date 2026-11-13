@@ -95,7 +95,8 @@ Then run **Developer: Reload Window**.
 ### Remote access (Tailscale)
 - [ ] Tailscale off (menu bar item: Disconnect), then Start Remote Access: the notice says Tailscale is turned off and the link is for this Mac only; the page still works on this Mac. Turn Tailscale on and run **Start Remote Access** again: no restart needed, the link becomes `https://<mac>.ts.net:8443/#k=…`.
 - [ ] Before HTTPS certificates and Serve are enabled: the notice has **Open Tailscale Setup**, which opens Tailscale's page. After enabling, Start Remote Access again works.
-- [ ] **Phone on Wi-Fi**: send yourself the link, open it in Safari or Chrome: the chat appears, Allow from the phone works, a prompt typed on the phone shows in VS Code.
+- [ ] The card (Start Remote Access, or **Show Remote Access Link**) shows a QR code, the link and the buttons. Copy Link copies it; New Link changes the code and the old link stops working; the card closes when a device pairs and when remote access stops. Without Tailscale the card says why, has no QR code, and offers Try Again (and Open Tailscale Setup when Tailscale gave a link).
+- [ ] **Phone on Wi-Fi**: scan the QR code with the phone's camera (or send yourself the link), open it in Safari or Chrome: the chat appears, Allow from the phone works, a prompt typed on the phone shows in VS Code.
 - [ ] **Phone on cellular** with the Tailscale app on: same. With Tailscale off on the phone the address does not load.
 - [ ] Lock the phone for a few minutes, unlock: the page says Reconnecting, then catches up, nothing twice.
 - [ ] Add to Home Screen, open from the icon: it opens full screen, still paired, light/dark follows the phone.
